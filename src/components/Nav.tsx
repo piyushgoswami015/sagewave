@@ -7,10 +7,10 @@ import { signIn, signOut, useSession } from "next-auth/react";
 import { Mark } from "./Icons";
 
 const LINKS = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/stem-split", label: "AI Stem Studio" },
-  { href: "/reel-to-mp3", label: "Audio Extractor" },
-  { href: "/reel-download", label: "Clip Archiver" },
+  { href: "/dashboard", label: "Dashboard", short: "Dashboard" },
+  { href: "/stem-split", label: "AI Stem Studio", short: "Stem Studio" },
+  { href: "/reel-to-mp3", label: "Audio Extractor", short: "Audio MP3" },
+  { href: "/reel-download", label: "Clip Archiver", short: "Clip MP4" },
 ];
 
 const GUEST_STORAGE_KEY = "sagewave_guest_user";
@@ -78,7 +78,8 @@ export default function Nav() {
         <nav className="nav-links" aria-label="Tools">
           {LINKS.map((l) => (
             <Link key={l.href} href={l.href} className={pathname === l.href ? "active" : ""}>
-              {l.label}
+              <span className="nav-lbl-full">{l.label}</span>
+              <span className="nav-lbl-short">{l.short}</span>
             </Link>
           ))}
         </nav>
