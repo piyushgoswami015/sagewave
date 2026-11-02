@@ -151,7 +151,7 @@ export default function LoginButton({
               id="auth-name"
               type="text"
               className="auth-input"
-              placeholder="e.g. Piyush Sharma"
+              placeholder="e.g. Piyush Goswami"
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoComplete="name"
