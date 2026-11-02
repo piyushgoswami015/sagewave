@@ -155,7 +155,7 @@ async function runLocalDemucsBackground(
  */
 async function separateWithFfmpegDsp(dir: string, sourceFile: string, sourceName: string): Promise<StemFile[]> {
   const ffmpeg = process.env.FFMPEG_PATH || "ffmpeg";
-  const enc = ["-c:a", "libmp3lame", "-b:a", "320k", "-ar", "44100"];
+  const enc = ["-vn", "-c:a", "libmp3lame", "-b:a", "320k", "-ar", "44100"];
   const base =
     path.basename(sourceName, path.extname(sourceName)).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 60) || "track";
 
@@ -170,7 +170,7 @@ async function separateWithFfmpegDsp(dir: string, sourceFile: string, sourceName
     "-i",
     src,
     "-af",
-    "stereotools=mlev=0.015:slev=1.0:sbal=0",
+    "stereotools=mlev=0.02:slev=1.0:sbal=0",
     ...enc,
     path.join(dir, instName),
   ]);
