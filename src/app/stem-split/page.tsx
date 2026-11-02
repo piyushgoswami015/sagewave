@@ -1,17 +1,61 @@
+import type { Metadata } from "next";
 import ToolHero from "@/components/ToolHero";
 import StemTool from "@/components/StemTool";
 import { Check } from "@/components/Icons";
 import { PHOTOS } from "@/lib/photos";
 
-export const metadata = {
-  title: "AI Stem & Instrumental Studio · Sagewave",
+export const metadata: Metadata = {
+  title: "Free AI Stem Separator & Vocal Remover Online — Separate Vocals, Drums & Bass | Sagewave",
   description:
-    "Separate any song or recording into studio-quality Instrumental, Vocals, Drums, Bass, and Melody stems using Hybrid Transformer Demucs AI.",
+    "Free AI music separator and vocal remover online. Upload any MP3, WAV, FLAC, or M4A to separate vocals from music, extract instrumental backing tracks, and isolate drums & bass using Hybrid Transformer Demucs AI.",
+  keywords: [
+    "AI stem separator",
+    "free AI music separator",
+    "AI vocal remover online",
+    "separate vocals from music",
+    "remove vocals from MP3",
+    "extract instrumental from song",
+    "separate drums from music",
+  ],
+  alternates: { canonical: "/stem-split" },
+};
+
+const FAQS = [
+  {
+    q: "How do I separate vocals and instruments from a song online for free?",
+    a: "Upload your MP3, WAV, FLAC, or M4A file into Sagewave's AI Stem Studio above and click Extract Instrumental. Our Hybrid Transformer Demucs neural network automatically splits the track into a clean Instrumental mix, isolated Vocals, Drums, Bass, and Melody stems at 320 kbps MP3.",
+  },
+  {
+    q: "Why is Hybrid Transformer AI better than standard vocal removers?",
+    a: "Older vocal removers use mid-side phase cancellation (OOPS), which accidentally deletes center-panned basslines and snare drums. Sagewave uses a dual-domain Hybrid Transformer architecture (htdemucs) that separates time-domain waveforms and spectrograms simultaneously—keeping the bass punchy and the instrumental mix phase-aligned.",
+  },
+  {
+    q: "Can I separate drums and bass from music for practice or remixing?",
+    a: "Yes. When you process a 4-stem separation, Sagewave provides individual players and 320 kbps MP3 downloads for Drums, Bass, Vocals, and Melody & Keys in addition to the master Instrumental backing track.",
+  },
+  {
+    q: "Are my uploaded audio files kept private?",
+    a: "Yes. Every uploaded audio file is processed inside an isolated temporary workspace and is automatically deleted from our servers 60 minutes after creation.",
+  },
+];
+
+const faqSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQS.map((f) => ({
+    "@type": "Question",
+    name: f.q,
+    acceptedAnswer: { "@type": "Answer", text: f.a },
+  })),
 };
 
 export default function Page() {
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
+      />
       <ToolHero
         image={PHOTOS.stems.src}
         credit={PHOTOS.stems.credit}
@@ -38,13 +82,24 @@ export default function Page() {
 
           <div className="panel" style={{ marginTop: 28 }}>
             <span className="eyebrow">Technical Overview</span>
-            <h3 style={{ marginTop: 10, marginBottom: 12 }}>How Hybrid Transformer source separation works</h3>
+            <h2 style={{ fontSize: "1.6rem", marginTop: 10, marginBottom: 12 }}>
+              Free AI Stem Separator &amp; Vocal Remover Online
+            </h2>
             <p style={{ color: "var(--muted)", fontSize: "0.95rem", lineHeight: 1.7 }}>
               Traditional vocal removers rely on simple mid-side phase cancellation, which often strips out center-panned
               bass and snare drums. Sagewave uses a dual-domain Hybrid Transformer architecture (Demucs) that analyzes
               both time-domain waveforms and complex spectrograms simultaneously—cleanly isolating vocal harmonics while
               leaving drums, basslines, and acoustic accompaniment intact for practice, backing tracks, and music education.
             </p>
+
+            <div className="faq-list" style={{ marginTop: 24 }}>
+              {FAQS.map((f) => (
+                <details key={f.q} className="faq-item">
+                  <summary>{f.q}</summary>
+                  <p>{f.a}</p>
+                </details>
+              ))}
+            </div>
           </div>
         </div>
       </section>

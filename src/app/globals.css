@@ -670,6 +670,54 @@ p { margin: 0; }
   .login-photo { display: none; }
 }
 
+/* ─────────── Editorial FAQ Accordion ─────────── */
+.faq-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+.faq-item {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--cream);
+  padding: 16px 20px;
+  transition: border-color 0.2s, background 0.2s;
+}
+.faq-item[open] {
+  background: #fff;
+  border-color: var(--line-strong);
+}
+.faq-item summary {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 1.08rem;
+  font-weight: 500;
+  color: var(--forest);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after {
+  content: "+";
+  font-family: var(--font-body), sans-serif;
+  font-size: 1.2rem;
+  color: var(--moss);
+  flex-shrink: 0;
+  transition: transform 0.2s var(--ease);
+}
+.faq-item[open] summary::after {
+  content: "−";
+}
+.faq-item p {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.93rem;
+  line-height: 1.65;
+}
+
 /* ─────────── Footer ─────────── */
 .footer { border-top: 1px solid var(--line); padding: 40px 0 48px; margin-top: 24px; }
 .footer-inner { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; align-items: center; }
