@@ -58,6 +58,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string; fil
   }
 
   const dir = jobDir(id);
+  const meta = await readMeta<{ downloadName?: string; owner?: string }>(dir);
+  const userKey = session.user.email || session.user.name || "user";
+  if (meta?.owner && meta.owner !== userKey) {
+    return new NextResponse("Forbidden", { status: 403 });
+  }
+
   const full = path.join(dir, file);
   const st = await fs.stat(full).catch(() => null);
   if (!st || !st.isFile()) return new NextResponse("This file has expired.", { status: 404 });
@@ -69,10 +75,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string; fil
     "Content-Type": type,
     "Accept-Ranges": "bytes",
     "Cache-Control": "private, max-age=3600",
+    "X-Content-Type-Options": "nosniff",
   });
 
   if (url.searchParams.get("download")) {
-    const meta = await readMeta<{ downloadName?: string }>(dir);
     const name = file.startsWith("media") && meta?.downloadName ? meta.downloadName : file;
     headers.set("Content-Disposition", `attachment; filename="${name}"`);
   }

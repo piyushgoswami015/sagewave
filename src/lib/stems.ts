@@ -18,6 +18,7 @@ export interface StemMeta {
   id: string;
   predictionId: string;
   sourceName: string;
+  owner?: string;
   status: "processing" | "finishing" | "done" | "failed";
   error?: string;
   files?: StemFile[];
@@ -403,7 +404,7 @@ async function modelVersion() {
   return cachedVersion!;
 }
 
-export async function startSeparation(file: File): Promise<StemMeta> {
+export async function startSeparation(file: File, owner?: string): Promise<StemMeta> {
   const { id, dir } = await createJobDir();
   const ext = path.extname(file.name) || ".mp3";
   const sourceFile = `source${ext}`;
@@ -417,6 +418,7 @@ export async function startSeparation(file: File): Promise<StemMeta> {
       id,
       predictionId: "local-demucs",
       sourceName: file.name,
+      owner,
       status: "processing",
       createdAt: Date.now(),
     };
@@ -450,6 +452,7 @@ export async function startSeparation(file: File): Promise<StemMeta> {
       id,
       predictionId: prediction.id,
       sourceName: file.name,
+      owner,
       status: "processing",
       createdAt: Date.now(),
     };
@@ -462,6 +465,7 @@ export async function startSeparation(file: File): Promise<StemMeta> {
     id,
     predictionId: "hf-demucs",
     sourceName: file.name,
+    owner,
     status: "processing",
     createdAt: Date.now(),
   };
@@ -470,10 +474,13 @@ export async function startSeparation(file: File): Promise<StemMeta> {
   return meta;
 }
 
-export async function pollSeparation(id: string): Promise<StemMeta> {
+export async function pollSeparation(id: string, requester?: string): Promise<StemMeta> {
   const dir = jobDir(id);
   const meta = await readMeta<StemMeta>(dir);
   if (!meta) throw new Error("Job not found or expired.");
+  if (meta.owner && requester && meta.owner !== requester) {
+    throw new Error("Job not found or expired.");
+  }
   if (meta.status === "done" || meta.status === "failed" || meta.status === "finishing") return meta;
 
   // Local Demucs and HF Demucs update meta.json directly in the background

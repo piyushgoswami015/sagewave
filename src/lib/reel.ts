@@ -59,7 +59,7 @@ async function resolveBin(envVal: string | undefined, name: string): Promise<str
   return envVal || name;
 }
 
-export async function fetchReel(url: string, mode: ReelMode): Promise<ReelResult> {
+export async function fetchReel(url: string, mode: ReelMode, owner?: string): Promise<ReelResult> {
   const { id, dir } = await createJobDir();
   const ytdlp = await resolveBin(process.env.YTDLP_PATH, "yt-dlp");
   const ffmpeg = await resolveBin(process.env.FFMPEG_PATH, "ffmpeg");
@@ -228,7 +228,7 @@ export async function fetchReel(url: string, mode: ReelMode): Promise<ReelResult
     size: st.size,
     mode,
   };
-  await writeMeta(dir, { ...result, downloadName: downloadName(uploader, mode) });
+  await writeMeta(dir, { ...result, owner, downloadName: downloadName(uploader, mode) });
   return result;
 }
 

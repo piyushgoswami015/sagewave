@@ -41,14 +41,14 @@ export async function registerUser(input: {
   const name = input.name.trim();
   const password = input.password;
 
-  if (!name || name.length < 2) {
-    throw new Error("Please enter your full name (at least 2 characters).");
+  if (!name || name.length < 2 || name.length > 80) {
+    throw new Error("Please enter your full name (2–80 characters).");
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (email.length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new Error("Please enter a valid email address.");
   }
-  if (password.length < 6) {
-    throw new Error("Password must be at least 6 characters long.");
+  if (password.length < 6 || password.length > 128) {
+    throw new Error("Password must be between 6 and 128 characters long.");
   }
 
   const users = await readUsers();
@@ -77,6 +77,9 @@ export async function verifyUserCredentials(
   passwordInput: string
 ): Promise<{ id: string; name: string; email: string }> {
   const email = emailInput.trim().toLowerCase();
+  if (email.length > 160 || passwordInput.length > 128) {
+    throw new Error("Invalid credentials.");
+  }
   const users = await readUsers();
   const user = users.find((u) => u.email === email);
   if (!user) {

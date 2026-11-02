@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   let release: (() => void) | null = null;
   try {
     release = await reelSemaphore.acquire();
-    const result = await fetchReel(url, mode);
+    const result = await fetchReel(url, mode, userKey);
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 422 });

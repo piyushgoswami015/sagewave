@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const meta = await startSeparation(file);
+    const meta = await startSeparation(file, userKey);
     return NextResponse.json({ id: meta.id, status: meta.status, files: meta.files });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });

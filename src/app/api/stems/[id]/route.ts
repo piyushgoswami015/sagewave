@@ -15,8 +15,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   if (!isValidJobId(id)) return NextResponse.json({ error: "Invalid job." }, { status: 400 });
 
+  const userKey = session.user.email || session.user.name || "user";
   try {
-    const meta = await pollSeparation(id);
+    const meta = await pollSeparation(id, userKey);
     return NextResponse.json({
       id: meta.id,
       status: meta.status,

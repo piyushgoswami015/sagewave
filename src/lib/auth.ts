@@ -2,6 +2,7 @@ import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { getServerSession } from "next-auth";
+import { checkRateLimit } from "./ratelimit";
 import { verifyUserCredentials } from "./users";
 
 export const authOptions: NextAuthOptions = {
@@ -18,10 +19,14 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const email = credentials?.email ?? "";
+        const email = (credentials?.email ?? "").trim().toLowerCase();
         const password = credentials?.password ?? "";
         if (!email || !password) {
           throw new Error("Please enter both your email and password.");
+        }
+        const rl = checkRateLimit(`login:${email}`, { maxRequests: 8, windowMs: 15 * 60 * 1000 });
+        if (!rl.ok) {
+          throw new Error(`Too many login attempts. Please wait ${rl.retryAfterSec}s before trying again.`);
         }
         return await verifyUserCredentials(email, password);
       },
