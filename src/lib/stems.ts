@@ -4,8 +4,8 @@ import { createJobDir, jobDir, readMeta, run, writeMeta } from "./jobs";
 import { demucsSemaphore } from "./ratelimit";
 
 const API = "https://api.replicate.com/v1";
-const HF_DEMUCS_SPACE = "https://abidlabs-music-separation.hf.space";
-const HF_DEMUCS_4STEM_SPACE = "https://nakas-demucs-playground.hf.space";
+const HF_DEMUCS_SPACE = process.env.HF_DEMUCS_SPACE_URL || "https://abidlabs-music-separation.hf.space";
+const HF_DEMUCS_4STEM_SPACE = process.env.HF_DEMUCS_FALLBACK_URL || "https://nakas-demucs-playground.hf.space";
 
 export interface StemFile {
   key: string; // instrumental | vocals | drums | bass | other ...
