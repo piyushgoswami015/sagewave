@@ -670,6 +670,112 @@ p { margin: 0; }
   .login-photo { display: none; }
 }
 
+/* ─────────── Pricing Cards ─────────── */
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+.pricing-grid.compact {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.pricing-card {
+  position: relative;
+  background: var(--paper);
+  border: 1.5px solid var(--line);
+  border-radius: 22px;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease), border-color 0.25s;
+}
+.pricing-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--line-strong);
+}
+.pricing-card.popular {
+  border-color: var(--forest);
+  background: #fff;
+  box-shadow: var(--shadow-md);
+}
+.pricing-ribbon {
+  position: absolute;
+  top: -12px;
+  right: 18px;
+  background: var(--forest);
+  color: var(--cream);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+.pricing-price {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 10px;
+}
+.pricing-price .amt {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 2.3rem;
+  font-weight: 600;
+  color: var(--forest);
+  line-height: 1;
+}
+.pricing-price .allowance {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--moss);
+}
+.pricing-tagline {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.pricing-features {
+  list-style: none;
+  margin: 0;
+  padding: 14px 0 4px;
+  border-top: 1px dashed var(--line-strong);
+  display: grid;
+  gap: 10px;
+}
+.pricing-features li {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: var(--ink);
+  line-height: 1.4;
+}
+.pricing-features li svg {
+  color: var(--moss);
+  margin-top: 2px;
+}
+
+@media (max-width: 1120px) {
+  .pricing-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .pricing-grid.compact {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 720px) {
+  .pricing-grid,
+  .pricing-grid.compact {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ─────────── Editorial FAQ Accordion ─────────── */
 .faq-list {
   display: grid;

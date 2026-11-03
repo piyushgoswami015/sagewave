@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { refundSongCredit } from "./billing";
 import { createJobDir, jobDir, readMeta, run, writeMeta } from "./jobs";
 import { demucsSemaphore } from "./ratelimit";
 
@@ -19,6 +20,7 @@ export interface StemMeta {
   predictionId: string;
   sourceName: string;
   owner?: string;
+  refunded?: boolean;
   status: "processing" | "finishing" | "done" | "failed";
   error?: string;
   files?: StemFile[];
@@ -480,6 +482,11 @@ export async function pollSeparation(id: string, requester?: string): Promise<St
   if (!meta) throw new Error("Job not found or expired.");
   if (meta.owner && requester && meta.owner !== requester) {
     throw new Error("Job not found or expired.");
+  }
+  if (meta.status === "failed" && meta.owner && !meta.refunded) {
+    meta.refunded = true;
+    await refundSongCredit(meta.owner).catch(() => {});
+    await writeMeta(dir, meta);
   }
   if (meta.status === "done" || meta.status === "failed" || meta.status === "finishing") return meta;
 
