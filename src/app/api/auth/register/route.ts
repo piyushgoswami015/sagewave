@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { isMailerConfigured } from "@/lib/mailer";
 import { checkRateLimit } from "@/lib/ratelimit";
-import { registerUser } from "@/lib/users";
+import { registerUser, verifyEmailOtp } from "@/lib/users";
 
 export const runtime = "nodejs";
 
@@ -14,7 +15,7 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { name?: string; email?: string; password?: string };
+  let body: { name?: string; email?: string; password?: string; otp?: string };
   try {
     body = await req.json();
   } catch {
@@ -22,6 +23,10 @@ export async function POST(req: Request) {
   }
 
   try {
+    if (isMailerConfigured()) {
+      verifyEmailOtp(body.email ?? "", "signup", body.otp ?? "");
+    }
+
     const user = await registerUser({
       name: body.name ?? "",
       email: body.email ?? "",

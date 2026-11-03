@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Alert, Arrow, Check, GoogleG } from "@/components/Icons";
 
+const REAL_EMAIL_RE = /^([a-zA-Z0-9._%+-]{2,})@([a-zA-Z0-9-]{2,}(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,12})$/;
+
 export default function LoginButton({
   callbackUrl,
   oauthConfigured,
@@ -12,15 +14,26 @@ export default function LoginButton({
   callbackUrl: string;
   oauthConfigured?: boolean;
 }) {
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpStep, setOtpStep] = useState(false);
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [loadingForm, setLoadingForm] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const router = useRouter();
+
+  const switchMode = (next: "signin" | "signup" | "forgot") => {
+    setMode(next);
+    setOtpStep(false);
+    setOtp("");
+    setFormError(null);
+    setInfoMessage(null);
+  };
 
   const handleGoogleSignIn = () => {
     setLoadingGoogle(true);
@@ -36,13 +49,89 @@ export default function LoginButton({
   const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    setInfoMessage(null);
     const cleanEmail = email.trim().toLowerCase();
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      setFormError("Please enter a valid email address.");
+    if (!REAL_EMAIL_RE.test(cleanEmail)) {
+      setFormError("Please enter a complete, valid email address (for example, yourname@gmail.com).");
       return;
     }
 
+    // ─────────── FORGOT PASSWORD FLOW ───────────
+    if (mode === "forgot") {
+      if (!otpStep) {
+        setLoadingForm(true);
+        try {
+          const res = await fetch("/api/auth/send-otp", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: cleanEmail, purpose: "reset" }),
+          });
+          const data = await res.json();
+          setLoadingForm(false);
+          if (!res.ok) {
+            setFormError(data.error || "Could not send reset code.");
+            return;
+          }
+          setOtpStep(true);
+          setInfoMessage(`We sent a 6-digit password reset code to ${cleanEmail}.`);
+        } catch {
+          setLoadingForm(false);
+          setFormError("Network error while requesting reset code. Please try again.");
+        }
+        return;
+      }
+
+      if (otp.trim().length !== 6) {
+        setFormError("Please enter the 6-digit verification code from your email.");
+        return;
+      }
+      if (password.length < 6) {
+        setFormError("New password must be at least 6 characters long.");
+        return;
+      }
+      if (password !== confirmPassword) {
+        setFormError("Passwords do not match.");
+        return;
+      }
+
+      setLoadingForm(true);
+      try {
+        const res = await fetch("/api/auth/reset-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: cleanEmail, otp: otp.trim(), newPassword: password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setLoadingForm(false);
+          setFormError(data.error || "Could not reset password.");
+          return;
+        }
+      } catch {
+        setLoadingForm(false);
+        setFormError("Network error while resetting password.");
+        return;
+      }
+
+      const signRes = await signIn("credentials", {
+        redirect: false,
+        email: cleanEmail,
+        password,
+        callbackUrl,
+      });
+      if (signRes?.error) {
+        setLoadingForm(false);
+        switchMode("signin");
+        setInfoMessage("Password updated! Please sign in with your new password.");
+        return;
+      }
+      router.push(callbackUrl || "/");
+      router.refresh();
+      return;
+    }
+
+    // ─────────── SIGN UP FLOW ───────────
     if (mode === "signup") {
       if (name.trim().length < 2) {
         setFormError("Please enter your full name (at least 2 characters).");
@@ -57,12 +146,47 @@ export default function LoginButton({
         return;
       }
 
+      if (!otpStep) {
+        setLoadingForm(true);
+        try {
+          const otpRes = await fetch("/api/auth/send-otp", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: cleanEmail, purpose: "signup" }),
+          });
+          const otpData = await otpRes.json();
+          if (!otpRes.ok) {
+            setLoadingForm(false);
+            setFormError(otpData.error || "Could not verify email address.");
+            return;
+          }
+          if (otpData.requiresOtp) {
+            setLoadingForm(false);
+            setOtpStep(true);
+            setInfoMessage(`We sent a 6-digit verification code to ${cleanEmail}.`);
+            return;
+          }
+        } catch {
+          setLoadingForm(false);
+          setFormError("Network error while verifying email. Please try again.");
+          return;
+        }
+      } else if (otp.trim().length !== 6) {
+        setFormError("Please enter the 6-digit verification code sent to your email.");
+        return;
+      }
+
       setLoadingForm(true);
       try {
         const regRes = await fetch("/api/auth/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), email: cleanEmail, password }),
+          body: JSON.stringify({
+            name: name.trim(),
+            email: cleanEmail,
+            password,
+            otp: otp.trim(),
+          }),
         });
         const regData = await regRes.json();
         if (!regRes.ok) {
@@ -76,6 +200,7 @@ export default function LoginButton({
         return;
       }
     } else {
+      // ─────────── SIGN IN FLOW ───────────
       if (!password) {
         setFormError("Please enter your password.");
         return;
@@ -108,10 +233,7 @@ export default function LoginButton({
           role="tab"
           aria-selected={mode === "signin"}
           className={mode === "signin" ? "active" : ""}
-          onClick={() => {
-            setMode("signin");
-            setFormError(null);
-          }}
+          onClick={() => switchMode("signin")}
         >
           Sign in
         </button>
@@ -120,10 +242,7 @@ export default function LoginButton({
           role="tab"
           aria-selected={mode === "signup"}
           className={mode === "signup" ? "active" : ""}
-          onClick={() => {
-            setMode("signup");
-            setFormError(null);
-          }}
+          onClick={() => switchMode("signup")}
         >
           Create account
         </button>
@@ -140,11 +259,17 @@ export default function LoginButton({
       </button>
 
       <div className="auth-or">
-        <span>or {mode === "signup" ? "register with email" : "sign in with email"}</span>
+        <span>
+          {mode === "forgot"
+            ? "recover account password"
+            : mode === "signup"
+              ? "or register with verified email"
+              : "or sign in with email"}
+        </span>
       </div>
 
       <form onSubmit={handleCredentialsSubmit} className="auth-form" noValidate>
-        {mode === "signup" && (
+        {mode === "signup" && !otpStep && (
           <div>
             <label className="field-label" htmlFor="auth-name">Full name</label>
             <input
@@ -166,31 +291,75 @@ export default function LoginButton({
             id="auth-email"
             type="email"
             className="auth-input"
-            placeholder="you@example.com"
+            placeholder="you@gmail.com"
             value={email}
+            disabled={otpStep}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="email"
             required
           />
         </div>
 
-        <div>
-          <label className="field-label" htmlFor="auth-password">
-            {mode === "signup" ? "Create password (min. 6 characters)" : "Password"}
-          </label>
-          <input
-            id="auth-password"
-            type="password"
-            className="auth-input"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete={mode === "signup" ? "new-password" : "current-password"}
-            required
-          />
-        </div>
+        {otpStep && (
+          <div>
+            <label className="field-label" htmlFor="auth-otp">6-digit verification code</label>
+            <input
+              id="auth-otp"
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              className="auth-input"
+              placeholder="123456"
+              style={{ letterSpacing: "0.25em", fontWeight: 700, textAlign: "center" }}
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+              required
+            />
+          </div>
+        )}
 
-        {mode === "signup" && (
+        {(mode === "signin" || (mode === "signup" && !otpStep) || (mode === "forgot" && otpStep)) && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <label className="field-label" htmlFor="auth-password" style={{ marginBottom: 0 }}>
+                {mode === "signup"
+                  ? "Create password (min. 6 characters)"
+                  : mode === "forgot"
+                    ? "New password (min. 6 characters)"
+                    : "Password"}
+              </label>
+              {mode === "signin" && (
+                <button
+                  type="button"
+                  onClick={() => switchMode("forgot")}
+                  style={{
+                    border: 0,
+                    background: "transparent",
+                    color: "var(--moss)",
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    padding: 0,
+                    textDecoration: "underline",
+                  }}
+                >
+                  Forgot password?
+                </button>
+              )}
+            </div>
+            <input
+              id="auth-password"
+              type="password"
+              className="auth-input"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete={mode === "signin" ? "current-password" : "new-password"}
+              required
+            />
+          </div>
+        )}
+
+        {((mode === "signup" && !otpStep) || (mode === "forgot" && otpStep)) && (
           <div>
             <label className="field-label" htmlFor="auth-confirm">Confirm password</label>
             <input
@@ -203,6 +372,13 @@ export default function LoginButton({
               autoComplete="new-password"
               required
             />
+          </div>
+        )}
+
+        {infoMessage && (
+          <div className="notice" style={{ marginBottom: 0 }}>
+            <Check size={15} style={{ verticalAlign: "middle", marginRight: 6 }} />
+            {infoMessage}
           </div>
         )}
 
@@ -220,14 +396,29 @@ export default function LoginButton({
           disabled={loadingForm || loadingGoogle}
         >
           {loadingForm
-            ? mode === "signup"
-              ? "Creating account…"
-              : "Verifying credentials…"
-            : mode === "signup"
-              ? "Create studio account"
-              : "Sign in to Sagewave"}
+            ? "Please wait…"
+            : mode === "forgot"
+              ? otpStep
+                ? "Verify code & update password"
+                : "Send 6-digit reset code"
+              : mode === "signup"
+                ? otpStep
+                  ? "Verify code & create account"
+                  : "Create studio account"
+                : "Sign in to Sagewave"}
           {!loadingForm && <Arrow size={16} className="arrow" />}
         </button>
+
+        {(mode === "forgot" || otpStep) && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ width: "100%" }}
+            onClick={() => switchMode("signin")}
+          >
+            Back to Sign in
+          </button>
+        )}
       </form>
 
       <div className="auth-perks">

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { ArrowUpRight, Check } from "@/components/Icons";
 import { PHOTOS } from "@/lib/photos";
+import AccountSecurity from "./AccountSecurity";
 import RecentHistory from "./RecentHistory";
 
 export const metadata = {
@@ -83,6 +84,7 @@ export default async function DashboardPage() {
         </div>
 
         <RecentHistory />
+        {session.user.email && <AccountSecurity email={session.user.email} />}
       </div>
     </section>
   );
