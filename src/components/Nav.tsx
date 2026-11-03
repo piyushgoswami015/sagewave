@@ -8,10 +8,10 @@ import { Mark } from "./Icons";
 
 const LINKS = [
   { href: "/dashboard", label: "Dashboard", short: "Dashboard" },
-  { href: "/stem-split", label: "AI Stem Studio", short: "Stems" },
-  { href: "/reel-to-mp3", label: "Audio Extractor", short: "MP3" },
-  { href: "/reel-download", label: "Clip Archiver", short: "MP4" },
-  { href: "/pricing", label: "Pricing", short: "Pricing" },
+  { href: "/stem-split", label: "AI Stem Studio", short: "Stem Studio" },
+  { href: "/reel-to-mp3", label: "Audio Extractor", short: "Audio MP3" },
+  { href: "/reel-download", label: "Clip Archiver", short: "Clip MP4" },
+  // { href: "/pricing", label: "Pricing", short: "Pricing" },
 ];
 
 const GUEST_STORAGE_KEY = "sagewave_guest_user";

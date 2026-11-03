@@ -91,7 +91,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </small>
               </div>
               <small style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                <Link href="/pricing">Pricing</Link>
+                {/* <Link href="/pricing">Pricing</Link> */}
                 <Link href="/stem-split">AI Stem Separator</Link>
                 <Link href="/vocal-remover">AI Vocal Remover</Link>
                 <Link href="/extract-instrumental">Extract Instrumental</Link>
@@ -100,7 +100,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link href="/reel-download">Clip Archiver</Link>
                 <Link href="/about">About</Link>
                 <Link href="/privacy">Privacy Policy</Link>
-                <Link href="/terms">Terms, Refunds & DMCA</Link>
+                <Link href="/terms">Terms & DMCA</Link>
               </small>
             </div>
           </footer>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getUserWallet } from "@/lib/billing";
+// import { getUserWallet } from "@/lib/billing";
 import { ArrowUpRight, Check } from "@/components/Icons";
 import { PHOTOS } from "@/lib/photos";
 import AccountSecurity from "./AccountSecurity";
@@ -46,7 +46,7 @@ export default async function DashboardPage() {
   }
 
   const firstName = session.user.name?.split(" ")[0] || "Creator";
-  const wallet = session.user.email ? await getUserWallet(session.user.email) : null;
+  // const wallet = session.user.email ? await getUserWallet(session.user.email) : null;
 
   return (
     <section className="section" style={{ paddingTop: 48 }}>
@@ -59,16 +59,16 @@ export default async function DashboardPage() {
             </h1>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            {wallet && (
+            {/* {wallet && (
               <span className="badge" style={{ background: "var(--forest)", color: "var(--cream)" }}>
                 {wallet.credits} {wallet.credits === 1 ? "Song Credit" : "Song Credits"} · {wallet.plan.toUpperCase()}
               </span>
             )}
             <Link href="/pricing" className="btn btn-primary btn-sm">
               Buy Song Credits <ArrowUpRight size={14} />
-            </Link>
+            </Link> */}
             <span className="badge">
-              <Check size={14} /> {session.user.email}
+              <Check size={14} /> Signed in as {session.user.email}
             </span>
           </div>
         </div>

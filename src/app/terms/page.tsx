@@ -68,6 +68,7 @@ export default function TermsPage() {
             </p>
           </div>
 
+          {/* Billing & Refund Policy (Commented out until paid plans go live)
           <div>
             <h3>5. Pricing, Studio Credits &amp; Refund / Cancellation Policy</h3>
             <p style={{ color: "var(--muted)", marginTop: 8 }}>
@@ -75,31 +76,11 @@ export default function TermsPage() {
               (Starter ₹10 for 3 songs, Basic ₹29 for 10 songs, Creator ₹79 for 30 songs, and Pro ₹149 for 75 songs)
               processed securely via Razorpay in Indian Rupees (INR).
             </p>
-            <ul style={{ color: "var(--muted)", marginTop: 10, paddingLeft: 20, display: "grid", gap: 6 }}>
-              <li>
-                <strong>No Recurring Subscriptions:</strong> All Studio Passes are one-time prepaid credit packs with
-                no automatic monthly rebilling. Purchased song credits never expire.
-              </li>
-              <li>
-                <strong>Automatic Credit Refund on Processing Error:</strong> If an uploaded audio track fails to
-                separate due to a system or server error, the consumed song credit is automatically refunded to your
-                Sagewave wallet immediately.
-              </li>
-              <li>
-                <strong>Refund &amp; Cancellation Policy:</strong> If you purchase a Studio Pass and have not used any
-                credits from that pack, or if you experience a verified technical issue, you may request a full refund
-                within 7 days of purchase by emailing{" "}
-                <a href="mailto:wavethesage@gmail.com" style={{ textDecoration: "underline", color: "var(--forest)", fontWeight: 600 }}>
-                  wavethesage@gmail.com
-                </a>{" "}
-                with your registered email and Razorpay Payment ID. Approved refunds are processed back to the original
-                payment method (UPI / Card / Netbanking) within 5–7 business days.
-              </li>
-            </ul>
           </div>
+          */}
 
           <div>
-            <h3>6. Disclaimer of Warranties</h3>
+            <h3>5. Disclaimer of Warranties</h3>
             <p style={{ color: "var(--muted)", marginTop: 8 }}>
               Sagewave is provided on an “as-is” and “as-available” basis without warranties of any kind. Users assume
               full legal responsibility for how they use exported audio and video files.

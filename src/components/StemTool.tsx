@@ -1,11 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
 import AudioPlayer from "./AudioPlayer";
-import PricingCards from "./PricingCards";
+// import PricingCards from "./PricingCards";
 import Progress from "./Progress";
 import { Alert, Check, Close, Download, Layers, Music, Refresh, Upload } from "./Icons";
 import { addStudioHistory } from "@/lib/history";
@@ -28,7 +27,7 @@ function fmtElapsed(s: number) {
 }
 
 export default function StemTool() {
-  const { data: session, status } = useSession();
+  const { data: session } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const [file, setFile] = useState<File | null>(null);
@@ -40,29 +39,8 @@ export default function StemTool() {
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [files, setFiles] = useState<StemFile[] | null>(null);
-  const [credits, setCredits] = useState<number | null>(null);
-  const [showUpgrade, setShowUpgrade] = useState(false);
   const tick = useRef<number | null>(null);
   const poll = useRef<number | null>(null);
-
-  const loadWallet = async () => {
-    try {
-      const res = await fetch("/api/billing/wallet");
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.authenticated) {
-        setCredits(data.credits);
-        if (data.credits > 0) setShowUpgrade(false);
-      }
-    } catch {}
-  };
-
-  useEffect(() => {
-    loadWallet();
-    const onWallet = () => loadWallet();
-    window.addEventListener("sagewave-wallet", onWallet);
-    return () => window.removeEventListener("sagewave-wallet", onWallet);
-  }, [status]);
 
   useEffect(
     () => () => {
@@ -100,12 +78,6 @@ export default function StemTool() {
       return;
     }
 
-    if (credits !== null && credits <= 0) {
-      setShowUpgrade(true);
-      setError("You have 0 song credits left. Choose a Studio Pass below (starting at ₹10 for 3 songs) to continue!");
-      return;
-    }
-
     setBusy(true);
     setError(null);
     setFiles(null);
@@ -120,17 +92,7 @@ export default function StemTool() {
       fd.append("file", file);
       const res = await fetch("/api/stems", { method: "POST", body: fd });
       const data = await res.json();
-      if (!res.ok) {
-        if (res.status === 402 || data.code === "NO_CREDITS") {
-          setCredits(0);
-          setShowUpgrade(true);
-        }
-        throw new Error(data.error || "Upload failed.");
-      }
-      if (typeof data.creditsRemaining === "number") {
-        setCredits(data.creditsRemaining);
-        window.dispatchEvent(new Event("sagewave-wallet"));
-      }
+      if (!res.ok) throw new Error(data.error || "Upload failed.");
       setJobId(data.id);
 
       if (data.status === "done" && data.files) {
@@ -197,7 +159,6 @@ export default function StemTool() {
           stopTimers();
           setError((err as Error).message);
           setBusy(false);
-          loadWallet();
         }
       };
       poll.current = window.setTimeout(check, 2500);
@@ -216,56 +177,12 @@ export default function StemTool() {
     setPhase(0);
   };
 
-  const walletBar = (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        flexWrap: "wrap",
-        gap: 10,
-        marginBottom: 16,
-        padding: "10px 14px",
-        borderRadius: 14,
-        background: "var(--cream)",
-        border: "1px solid var(--line)",
-        fontSize: "0.85rem",
-      }}
-    >
-      <span style={{ color: "var(--forest)", fontWeight: 600 }}>
-        {credits !== null ? (
-          <>
-            Studio Credits: <strong>{credits}</strong> {credits === 1 ? "song" : "songs"} remaining
-          </>
-        ) : (
-          <>Free Trial: <strong>1 song (₹0)</strong> included on sign-in</>
-        )}
-      </span>
-      <button
-        type="button"
-        onClick={() => setShowUpgrade(!showUpgrade)}
-        style={{
-          border: 0,
-          background: "transparent",
-          color: "var(--moss)",
-          fontWeight: 600,
-          fontSize: "0.84rem",
-          padding: 0,
-          textDecoration: "underline",
-        }}
-      >
-        {showUpgrade ? "Hide studio plans" : "Top up credits (from ₹10) →"}
-      </button>
-    </div>
-  );
-
   if (files && jobId) {
     const inst = files.find((f) => f.key === "instrumental");
     const rest = files.filter((f) => f.key !== "instrumental");
     const url = (f: StemFile) => `/api/files/${jobId}/${f.file}`;
     return (
       <div className="result">
-        {walletBar}
         <div className="success-line">
           <span className="tick"><Check size={14} /></span>
           Separated — vocals removed
@@ -307,9 +224,6 @@ export default function StemTool() {
           <button className="btn btn-ghost" onClick={reset}>
             <Refresh size={16} /> Separate another track
           </button>
-          <Link href="/pricing" className="btn btn-light">
-            Get more song credits
-          </Link>
         </div>
       </div>
     );
@@ -317,8 +231,6 @@ export default function StemTool() {
 
   return (
     <div>
-      {walletBar}
-
       {!file ? (
         <div
           className={`dropzone${drag ? " drag" : ""}`}
@@ -352,7 +264,7 @@ export default function StemTool() {
           </div>
           <div className="result-actions" style={{ marginTop: 20 }}>
             <button className="btn btn-primary" onClick={start} disabled={busy}>
-              <Layers size={17} /> {busy ? "Separating…" : "Extract instrumental (1 song credit)"}
+              <Layers size={17} /> {busy ? "Separating…" : "Extract instrumental"}
             </button>
           </div>
         </>
@@ -369,16 +281,6 @@ export default function StemTool() {
         <div className="error-msg" role="alert">
           <Alert size={18} style={{ flexShrink: 0, marginTop: 1 }} />
           <span>{error}</span>
-        </div>
-      )}
-
-      {showUpgrade && (
-        <div style={{ marginTop: 24, paddingTop: 22, borderTop: "1px dashed var(--line-strong)" }}>
-          <div style={{ marginBottom: 14 }}>
-            <span className="eyebrow">Top Up AI Stem Credits</span>
-            <h4 style={{ marginTop: 6, fontSize: "1.25rem" }}>Choose a Studio Pass (Instant UPI / Card)</h4>
-          </div>
-          <PricingCards compact />
         </div>
       )}
     </div>

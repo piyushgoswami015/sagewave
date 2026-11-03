@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { refundSongCredit } from "./billing";
+// import { refundSongCredit } from "./billing";
 import { createJobDir, jobDir, readMeta, run, writeMeta } from "./jobs";
 import { demucsSemaphore } from "./ratelimit";
 
@@ -483,11 +483,13 @@ export async function pollSeparation(id: string, requester?: string): Promise<St
   if (meta.owner && requester && meta.owner !== requester) {
     throw new Error("Job not found or expired.");
   }
+  /* Billing auto-refund on failure (commented out until billing goes live):
   if (meta.status === "failed" && meta.owner && !meta.refunded) {
     meta.refunded = true;
     await refundSongCredit(meta.owner).catch(() => {});
     await writeMeta(dir, meta);
   }
+  */
   if (meta.status === "done" || meta.status === "failed" || meta.status === "finishing") return meta;
 
   // Local Demucs and HF Demucs update meta.json directly in the background

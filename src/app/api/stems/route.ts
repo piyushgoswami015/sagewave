@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { consumeSongCredit, refundSongCredit } from "@/lib/billing";
+// import { consumeSongCredit, refundSongCredit } from "@/lib/billing";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { startSeparation } from "@/lib/stems";
 
@@ -12,15 +12,15 @@ const OK_TYPES = /audio\/(mpeg|mp3|wav|x-wav|wave|flac|x-flac|mp4|x-m4a|aac|ogg)
 
 export async function POST(req: Request) {
   const session = await getSession();
-  if (!session?.user?.email) {
+  if (!session?.user) {
     return NextResponse.json({ error: "Please sign in to use the AI Stem Studio." }, { status: 401 });
   }
 
-  const userKey = session.user.email.toLowerCase();
-  const rl = checkRateLimit(`stems:${userKey}`, { maxRequests: 10, windowMs: 10 * 60 * 1000 });
+  const userKey = session.user.email || session.user.name || "user";
+  const rl = checkRateLimit(`stems:${userKey}`, { maxRequests: 5, windowMs: 10 * 60 * 1000 });
   if (!rl.ok) {
     return NextResponse.json(
-      { error: `Rate limit reached. Please wait ${rl.retryAfterSec}s.` },
+      { error: `Rate limit reached (5 songs per 10 minutes). Please wait ${rl.retryAfterSec}s.` },
       { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } }
     );
   }
@@ -33,6 +33,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Please upload an audio file (MP3, WAV, FLAC, M4A)." }, { status: 415 });
   }
 
+  /* Billing credit consumption (commented out until billing strategy is finalized):
   let walletAfterConsume;
   try {
     walletAfterConsume = await consumeSongCredit(userKey);
@@ -48,17 +49,13 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
+  */
 
   try {
     const meta = await startSeparation(file, userKey);
-    return NextResponse.json({
-      id: meta.id,
-      status: meta.status,
-      files: meta.files,
-      creditsRemaining: walletAfterConsume.credits,
-    });
+    return NextResponse.json({ id: meta.id, status: meta.status, files: meta.files });
   } catch (err) {
-    await refundSongCredit(userKey).catch(() => {});
+    // await refundSongCredit(userKey).catch(() => {});
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
 }
