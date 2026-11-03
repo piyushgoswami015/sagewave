@@ -63,7 +63,7 @@ export async function sendOtpEmail(opts: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: process.env.EMAIL_FROM || "Sagewave Studio <onboarding@resend.dev>",
+        from: process.env.EMAIL_FROM || "Sagewave Studio <noreply@sagewave.in>",
         to: [opts.to],
         subject,
         html,
@@ -71,7 +71,12 @@ export async function sendOtpEmail(opts: {
       }),
     });
     if (!res.ok) {
-      throw new Error(`Email service error (${res.status}).`);
+      let detail = "";
+      try {
+        const errJson = (await res.json()) as { message?: string };
+        detail = errJson?.message || "";
+      } catch {}
+      throw new Error(`RESEND_${res.status}:${detail}`);
     }
     return;
   }

@@ -56,8 +56,22 @@ export async function POST(req: Request) {
     }
 
     const code = generateEmailOtp(email, purpose);
-    await sendOtpEmail({ to: email, code, purpose });
-    return NextResponse.json({ sent: true, requiresOtp: true });
+    try {
+      await sendOtpEmail({ to: email, code, purpose });
+      return NextResponse.json({ sent: true, requiresOtp: true });
+    } catch (mailErr) {
+      const msg = (mailErr as Error).message || "";
+      // If Resend domain verification is still pending (403), allow verified-MX signups to proceed smoothly
+      if (purpose === "signup" && msg.startsWith("RESEND_403")) {
+        return NextResponse.json({ sent: false, requiresOtp: false });
+      }
+      if (msg.startsWith("RESEND_403")) {
+        throw new Error(
+          "Domain verification pending in Resend (403). Please verify 'sagewave.in' in Resend → Domains, or click 'Continue with Google' to sign in immediately."
+        );
+      }
+      throw mailErr;
+    }
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }

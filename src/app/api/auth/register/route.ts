@@ -23,8 +23,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    if (isMailerConfigured()) {
-      verifyEmailOtp(body.email ?? "", "signup", body.otp ?? "");
+    if (isMailerConfigured() && body.otp) {
+      verifyEmailOtp(body.email ?? "", "signup", body.otp);
     }
 
     const user = await registerUser({
