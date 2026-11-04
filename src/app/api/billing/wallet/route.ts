@@ -9,8 +9,10 @@ export async function GET() {
   if (!session?.user?.email) {
     return NextResponse.json({
       authenticated: false,
+      isPremium: false,
       credits: null,
       plan: null,
+      premiumExpiresAt: null,
       razorpayConfigured: isRazorpayConfigured(),
     });
   }
@@ -19,8 +21,11 @@ export async function GET() {
   return NextResponse.json({
     authenticated: true,
     email: wallet.email,
+    isPremium: wallet.isPremium,
     credits: wallet.credits,
     plan: wallet.plan,
+    premiumActivatedAt: wallet.premiumActivatedAt,
+    premiumExpiresAt: wallet.premiumExpiresAt,
     totalSongsProcessed: wallet.totalSongsProcessed,
     payments: wallet.payments.slice(0, 10),
     razorpayConfigured: isRazorpayConfigured(),

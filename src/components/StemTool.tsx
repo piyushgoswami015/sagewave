@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
 import AudioPlayer from "./AudioPlayer";
-// import PricingCards from "./PricingCards";
+import PricingCards from "./PricingCards";
 import Progress from "./Progress";
 import { Alert, Check, Close, Download, Layers, Music, Refresh, Upload } from "./Icons";
 import { addStudioHistory } from "@/lib/history";
@@ -27,7 +28,7 @@ function fmtElapsed(s: number) {
 }
 
 export default function StemTool() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const [file, setFile] = useState<File | null>(null);
@@ -39,8 +40,37 @@ export default function StemTool() {
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [files, setFiles] = useState<StemFile[] | null>(null);
+  const [credits, setCredits] = useState<number | null>(null);
+  const [isPremium, setIsPremium] = useState(false);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const tick = useRef<number | null>(null);
   const poll = useRef<number | null>(null);
+
+  const loadWallet = async () => {
+    try {
+      const res = await fetch("/api/billing/wallet", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.authenticated) {
+        setCredits(data.credits);
+        setIsPremium(Boolean(data.isPremium));
+        setExpiresAt(data.premiumExpiresAt || null);
+        if (data.credits > 0) {
+          setShowUpgrade(false);
+        } else {
+          setShowUpgrade(true);
+        }
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    loadWallet();
+    const onWallet = () => loadWallet();
+    window.addEventListener("sagewave-wallet", onWallet);
+    return () => window.removeEventListener("sagewave-wallet", onWallet);
+  }, [status]);
 
   useEffect(
     () => () => {
@@ -78,6 +108,14 @@ export default function StemTool() {
       return;
     }
 
+    if (credits !== null && credits <= 0) {
+      setShowUpgrade(true);
+      setError(
+        "AI Stem Studio is locked — your Free Trial or 30-day / 30-song Premium Pass has ended. Unlock Studio Premium (₹15 — 30 Songs for 30 Days) below to continue!"
+      );
+      return;
+    }
+
     setBusy(true);
     setError(null);
     setFiles(null);
@@ -92,7 +130,20 @@ export default function StemTool() {
       fd.append("file", file);
       const res = await fetch("/api/stems", { method: "POST", body: fd });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Upload failed.");
+      if (!res.ok) {
+        if (res.status === 402 || data.code === "NO_CREDITS") {
+          setCredits(0);
+          setIsPremium(false);
+          setShowUpgrade(true);
+          window.dispatchEvent(new Event("sagewave-wallet"));
+        }
+        throw new Error(data.error || "Upload failed.");
+      }
+      if (typeof data.creditsRemaining === "number") {
+        setCredits(data.creditsRemaining);
+        setIsPremium(Boolean(data.isPremium));
+        window.dispatchEvent(new Event("sagewave-wallet"));
+      }
       setJobId(data.id);
 
       if (data.status === "done" && data.files) {
@@ -159,6 +210,7 @@ export default function StemTool() {
           stopTimers();
           setError((err as Error).message);
           setBusy(false);
+          loadWallet();
         }
       };
       poll.current = window.setTimeout(check, 2500);
@@ -175,7 +227,73 @@ export default function StemTool() {
     setJobId(null);
     setPct(0);
     setPhase(0);
+    loadWallet();
   };
+
+  const expDateStr = expiresAt
+    ? new Date(expiresAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+    : "";
+
+  const walletBar = (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 10,
+        marginBottom: 16,
+        padding: "10px 14px",
+        borderRadius: 14,
+        background: isPremium ? "var(--forest)" : "var(--cream)",
+        color: isPremium ? "var(--cream)" : "var(--forest)",
+        border: "1px solid var(--line)",
+        fontSize: "0.85rem",
+      }}
+    >
+      <span style={{ fontWeight: 600 }}>
+        {isPremium ? (
+          <>
+            ★ PREMIUM ACTIVE · <strong>{credits} / 30</strong> songs left
+            {expDateStr && ` · Valid till ${expDateStr}`}
+          </>
+        ) : credits !== null ? (
+          credits > 0 ? (
+            <>
+              Free Trial: <strong>{credits}</strong> free song available
+            </>
+          ) : (
+            <>
+              🔒 AI Stem Locked · <strong>0</strong> songs remaining
+            </>
+          )
+        ) : (
+          <>
+            Free Trial: <strong>1 free song (₹0)</strong> · Studio Premium: <strong>₹15 (30 songs / 30 days)</strong>
+          </>
+        )}
+      </span>
+      <button
+        type="button"
+        onClick={() => setShowUpgrade(!showUpgrade)}
+        style={{
+          border: 0,
+          background: "transparent",
+          color: isPremium ? "var(--sage-soft)" : "var(--moss)",
+          fontWeight: 600,
+          fontSize: "0.84rem",
+          padding: 0,
+          textDecoration: "underline",
+        }}
+      >
+        {showUpgrade
+          ? "Hide Premium pass"
+          : isPremium
+            ? "Manage / Renew Pass"
+            : "Get Studio Premium (₹15 · 30 songs) →"}
+      </button>
+    </div>
+  );
 
   if (files && jobId) {
     const inst = files.find((f) => f.key === "instrumental");
@@ -183,6 +301,7 @@ export default function StemTool() {
     const url = (f: StemFile) => `/api/files/${jobId}/${f.file}`;
     return (
       <div className="result">
+        {walletBar}
         <div className="success-line">
           <span className="tick"><Check size={14} /></span>
           Separated — vocals removed
@@ -224,6 +343,11 @@ export default function StemTool() {
           <button className="btn btn-ghost" onClick={reset}>
             <Refresh size={16} /> Separate another track
           </button>
+          {!isPremium && (
+            <Link href="/pricing" className="btn btn-light">
+              Unlock 30 Songs for 30 Days · ₹15
+            </Link>
+          )}
         </div>
       </div>
     );
@@ -231,6 +355,8 @@ export default function StemTool() {
 
   return (
     <div>
+      {walletBar}
+
       {!file ? (
         <div
           className={`dropzone${drag ? " drag" : ""}`}
@@ -281,6 +407,16 @@ export default function StemTool() {
         <div className="error-msg" role="alert">
           <Alert size={18} style={{ flexShrink: 0, marginTop: 1 }} />
           <span>{error}</span>
+        </div>
+      )}
+
+      {showUpgrade && (
+        <div style={{ marginTop: 24, paddingTop: 22, borderTop: "1px dashed var(--line-strong)" }}>
+          <div style={{ marginBottom: 14 }}>
+            <span className="eyebrow">Unlock AI Stem &amp; Instrumental Studio</span>
+            <h4 style={{ marginTop: 6, fontSize: "1.28rem" }}>Studio Premium — 30 Songs for 30 Days (₹15)</h4>
+          </div>
+          <PricingCards compact />
         </div>
       )}
     </div>

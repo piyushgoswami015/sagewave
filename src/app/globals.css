@@ -673,13 +673,17 @@ p { margin: 0; }
 /* ─────────── Pricing Cards ─────────── */
 .pricing-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 22px;
+  max-width: 820px;
   align-items: stretch;
 }
-.pricing-grid.compact {
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
+.pricing-grid.two-col {
+  grid-template-columns: repeat(2, 1fr);
+}
+.pricing-grid.single-col {
+  grid-template-columns: 1fr;
+  max-width: 520px;
 }
 .pricing-card {
   position: relative;

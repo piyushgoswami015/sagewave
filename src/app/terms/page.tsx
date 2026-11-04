@@ -68,19 +68,51 @@ export default function TermsPage() {
             </p>
           </div>
 
-          {/* Billing & Refund Policy (Commented out until paid plans go live)
           <div>
-            <h3>5. Pricing, Studio Credits &amp; Refund / Cancellation Policy</h3>
+            <h3>5. Studio Premium Pass (₹15 — 30 Songs for 30 Days) &amp; Expiry Terms</h3>
             <p style={{ color: "var(--muted)", marginTop: 8 }}>
-              Sagewave offers a Free Trial (₹0 for 1 AI Stem separation song) and optional prepaid Studio Passes
-              (Starter ₹10 for 3 songs, Basic ₹29 for 10 songs, Creator ₹79 for 30 songs, and Pro ₹149 for 75 songs)
-              processed securely via Razorpay in Indian Rupees (INR).
+              Sagewave provides <strong>1 complimentary Free Trial song separation (₹0)</strong> per registered user
+              account for the AI Stem &amp; Instrumental Studio. To continue using the AI Stem &amp; Instrumental Studio
+              after the Free Trial song is used, users may purchase the <strong>Studio Premium Pass for ₹15</strong>{" "}
+              (processed securely in Indian Rupees via Razorpay).
             </p>
+            <ul style={{ color: "var(--muted)", marginTop: 10, paddingLeft: 20, display: "grid", gap: 8 }}>
+              <li>
+                <strong>Exact 30-Day Activation Window:</strong> Studio Premium activates at the exact timestamp your
+                ₹15 payment is verified and remains valid for <strong>30 calendar days (720 hours)</strong> from the
+                time of purchase, granting an allowance of <strong>30 AI Stem song separations</strong>.
+              </li>
+              <li>
+                <strong>30 Songs or 30 Days — Whichever Comes First:</strong> Your Studio Premium membership and{" "}
+                <code>★ PREMIUM</code> account tag remain active until <strong>either</strong> (a) 30 days have elapsed
+                from the exact time of purchase, <strong>or</strong> (b) all 30 song credits in the pass have been used
+                — <strong>whichever occurs first</strong>.
+              </li>
+              <li>
+                <strong>Automatic Expiry &amp; Re-Locking:</strong> Once the 30-day period ends (even if fewer than 30
+                songs were used) <em>or</em> once the 30th song is completed (even if fewer than 30 days have passed),
+                your Studio Premium period is complete, the Premium tag is automatically removed from your account, and
+                the AI Stem &amp; Instrumental Studio is locked until a new ₹15 Studio Premium Pass is purchased.
+              </li>
+              <li>
+                <strong>No Recurring Auto-Debit:</strong> The ₹15 Studio Premium Pass is a one-time prepaid pass and
+                does not auto-renew or auto-debit your UPI or card.
+              </li>
+              <li>
+                <strong>Automatic Credit Protection &amp; Refund Policy:</strong> If a song separation fails due to a
+                server error, that song credit is automatically restored to your account. If you experience a verified
+                technical issue and have not used any songs from your pass, you may request a refund within 7 days of
+                purchase by contacting{" "}
+                <a href="mailto:wavethesage@gmail.com" style={{ textDecoration: "underline", color: "var(--forest)", fontWeight: 600 }}>
+                  wavethesage@gmail.com
+                </a>{" "}
+                with your account email and Razorpay Payment ID.
+              </li>
+            </ul>
           </div>
-          */}
 
           <div>
-            <h3>5. Disclaimer of Warranties</h3>
+            <h3>6. Disclaimer of Warranties</h3>
             <p style={{ color: "var(--muted)", marginTop: 8 }}>
               Sagewave is provided on an “as-is” and “as-available” basis without warranties of any kind. Users assume
               full legal responsibility for how they use exported audio and video files.

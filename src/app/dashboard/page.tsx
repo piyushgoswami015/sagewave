@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-// import { getUserWallet } from "@/lib/billing";
+import { getUserWallet } from "@/lib/billing";
 import { ArrowUpRight, Check } from "@/components/Icons";
 import { PHOTOS } from "@/lib/photos";
 import AccountSecurity from "./AccountSecurity";
@@ -46,7 +46,14 @@ export default async function DashboardPage() {
   }
 
   const firstName = session.user.name?.split(" ")[0] || "Creator";
-  // const wallet = session.user.email ? await getUserWallet(session.user.email) : null;
+  const wallet = session.user.email ? await getUserWallet(session.user.email) : null;
+  const expStr = wallet?.premiumExpiresAt
+    ? new Date(wallet.premiumExpiresAt).toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : null;
 
   return (
     <section className="section" style={{ paddingTop: 48 }}>
@@ -59,16 +66,24 @@ export default async function DashboardPage() {
             </h1>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            {/* {wallet && (
+            {wallet?.isPremium ? (
               <span className="badge" style={{ background: "var(--forest)", color: "var(--cream)" }}>
-                {wallet.credits} {wallet.credits === 1 ? "Song Credit" : "Song Credits"} · {wallet.plan.toUpperCase()}
+                ★ PREMIUM · {wallet.credits}/30 Songs Left{expStr ? ` · Valid till ${expStr}` : ""}
               </span>
+            ) : (
+              <>
+                <span className="badge">
+                  {wallet && wallet.credits > 0
+                    ? `Free Trial: ${wallet.credits} Song Left`
+                    : "AI Stem Locked (0 Songs Left)"}
+                </span>
+                <Link href="/pricing" className="btn btn-primary btn-sm">
+                  Get Premium · ₹15 <ArrowUpRight size={14} />
+                </Link>
+              </>
             )}
-            <Link href="/pricing" className="btn btn-primary btn-sm">
-              Buy Song Credits <ArrowUpRight size={14} />
-            </Link> */}
             <span className="badge">
-              <Check size={14} /> Signed in as {session.user.email}
+              <Check size={14} /> {session.user.email}
             </span>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { type PlanId, verifyAndCreditRazorpayPayment } from "@/lib/billing";
+import { verifyAndCreditRazorpayPayment } from "@/lib/billing";
 
 export const runtime = "nodejs";
 
@@ -11,7 +11,6 @@ export async function POST(req: Request) {
   }
 
   let body: {
-    planId?: PlanId;
     razorpay_order_id?: string;
     razorpay_payment_id?: string;
     razorpay_signature?: string;
@@ -25,7 +24,6 @@ export async function POST(req: Request) {
   try {
     const wallet = await verifyAndCreditRazorpayPayment({
       email: session.user.email,
-      planId: (body.planId || "starter") as PlanId,
       razorpayOrderId: body.razorpay_order_id || "",
       razorpayPaymentId: body.razorpay_payment_id || "",
       razorpaySignature: body.razorpay_signature || "",
@@ -33,8 +31,10 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
+      isPremium: wallet.isPremium,
       credits: wallet.credits,
       plan: wallet.plan,
+      premiumExpiresAt: wallet.premiumExpiresAt,
     });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });

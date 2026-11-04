@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -28,24 +29,44 @@ function loadRazorpayScript(): Promise<boolean> {
   });
 }
 
+function formatExpiry(iso: string | null): string {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleString("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
 export default function PricingCards({ compact = false }: { compact?: boolean }) {
   const { status } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const [credits, setCredits] = useState<number | null>(null);
+  const [isPremium, setIsPremium] = useState(false);
   const [activePlan, setActivePlan] = useState<PlanId | null>(null);
-  const [busyPlan, setBusyPlan] = useState<PlanId | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const fetchWallet = async () => {
     try {
-      const res = await fetch("/api/billing/wallet");
+      const res = await fetch("/api/billing/wallet", { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
       if (data.authenticated) {
         setCredits(data.credits);
+        setIsPremium(Boolean(data.isPremium));
         setActivePlan(data.plan);
+        setExpiresAt(data.premiumExpiresAt || null);
       }
     } catch {}
   };
@@ -57,7 +78,7 @@ export default function PricingCards({ compact = false }: { compact?: boolean })
     return () => window.removeEventListener("sagewave-wallet", onSync);
   }, [status]);
 
-  const handleBuy = async (planId: PlanId) => {
+  const handleBuy = async (planId: "free" | "premium") => {
     setError(null);
     setSuccessMsg(null);
 
@@ -71,11 +92,16 @@ export default function PricingCards({ compact = false }: { compact?: boolean })
       return;
     }
 
-    setBusyPlan(planId);
+    if (!acceptedTerms) {
+      setError("Please tick the checkbox to accept the Terms & Conditions before proceeding to Razorpay payment.");
+      return;
+    }
+
+    setBusy(true);
     try {
       const loaded = await loadRazorpayScript();
       if (!loaded || !window.Razorpay) {
-        setBusyPlan(null);
+        setBusy(false);
         setError("Could not load Razorpay Checkout. Please check your internet connection.");
         return;
       }
@@ -83,11 +109,11 @@ export default function PricingCards({ compact = false }: { compact?: boolean })
       const orderRes = await fetch("/api/billing/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId }),
+        body: JSON.stringify({ planId: "premium", acceptedTerms: true }),
       });
       const orderData = await orderRes.json();
       if (!orderRes.ok) {
-        setBusyPlan(null);
+        setBusy(false);
         setError(orderData.error || "Could not start checkout.");
         return;
       }
@@ -97,7 +123,7 @@ export default function PricingCards({ compact = false }: { compact?: boolean })
         amount: orderData.amount,
         currency: orderData.currency,
         name: "Sagewave Audio Studio",
-        description: `${orderData.planName} Pass — ${orderData.songs} AI Stem Songs`,
+        description: "Studio Premium — 30 Songs for 30 Days (₹15)",
         order_id: orderData.orderId,
         prefill: {
           name: orderData.user?.name || "",
@@ -107,7 +133,7 @@ export default function PricingCards({ compact = false }: { compact?: boolean })
           color: "#1d3a2a",
         },
         modal: {
-          ondismiss: () => setBusyPlan(null),
+          ondismiss: () => setBusy(false),
         },
         handler: async (response: {
           razorpay_order_id?: string;
@@ -119,45 +145,46 @@ export default function PricingCards({ compact = false }: { compact?: boolean })
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                planId,
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
               }),
             });
             const verifyData = await verifyRes.json();
-            setBusyPlan(null);
+            setBusy(false);
             if (!verifyRes.ok) {
               setError(verifyData.error || "Payment verification failed.");
               return;
             }
             setCredits(verifyData.credits);
+            setIsPremium(Boolean(verifyData.isPremium));
             setActivePlan(verifyData.plan);
+            setExpiresAt(verifyData.premiumExpiresAt || null);
             setSuccessMsg(
-              `Payment verified! Added +${orderData.songs} song credits. You now have ${verifyData.credits} songs available.`
+              `Studio Premium Activated! You now have 30 song credits valid until ${formatExpiry(verifyData.premiumExpiresAt)}.`
             );
             window.dispatchEvent(new Event("sagewave-wallet"));
           } catch {
-            setBusyPlan(null);
+            setBusy(false);
             setError("Network error while verifying payment.");
           }
         },
       });
 
       rzp.on("payment.failed", (resp: Record<string, unknown>) => {
-        setBusyPlan(null);
+        setBusy(false);
         const errObj = resp?.error as { description?: string } | undefined;
         setError(errObj?.description || "Payment was not completed. Please try again.");
       });
 
       rzp.open();
     } catch {
-      setBusyPlan(null);
+      setBusy(false);
       setError("Something went wrong while opening Razorpay Checkout.");
     }
   };
 
-  const plans = compact ? PRICING_PLANS.filter((p) => p.id !== "free") : PRICING_PLANS;
+  const plans = compact ? PRICING_PLANS.filter((p) => p.id === "premium") : PRICING_PLANS;
 
   return (
     <div>
@@ -170,18 +197,32 @@ export default function PricingCards({ compact = false }: { compact?: boolean })
             flexWrap: "wrap",
             gap: 12,
             marginBottom: 20,
-            padding: "12px 18px",
+            padding: "14px 18px",
             borderRadius: 16,
-            background: "var(--sage-soft)",
+            background: isPremium ? "var(--forest)" : "var(--sage-soft)",
+            color: isPremium ? "var(--cream)" : "var(--forest)",
             border: "1px solid var(--line)",
           }}
         >
-          <span style={{ fontWeight: 600, color: "var(--forest)", fontSize: "0.92rem" }}>
-            Your AI Stem Wallet: <strong>{credits}</strong> {credits === 1 ? "song credit" : "song credits"} available
-            {activePlan && ` · Current tier: ${activePlan.toUpperCase()}`}
+          <span style={{ fontWeight: 600, fontSize: "0.92rem" }}>
+            {isPremium ? (
+              <>
+                ★ STUDIO PREMIUM ACTIVE · <strong>{credits} / 30</strong> songs remaining
+              </>
+            ) : activePlan === "expired" ? (
+              <>
+                AI Stem Pass Expired · <strong>0</strong> songs remaining — Activate Studio Premium (₹15) to unlock
+              </>
+            ) : (
+              <>
+                Free Trial Wallet: <strong>{credits}</strong> {credits === 1 ? "song" : "songs"} remaining
+              </>
+            )}
           </span>
-          <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>
-            Instant UPI · GPay · PhonePe · Cards via Razorpay
+          <span style={{ fontSize: "0.82rem", opacity: 0.85 }}>
+            {isPremium && expiresAt
+              ? `Valid until ${formatExpiry(expiresAt)}`
+              : "Instant UPI · GPay · PhonePe · Cards via Razorpay"}
           </span>
         </div>
       )}
@@ -200,24 +241,21 @@ export default function PricingCards({ compact = false }: { compact?: boolean })
         </div>
       )}
 
-      <div className={`pricing-grid${compact ? " compact" : ""}`}>
+      <div className={`pricing-grid two-col${compact ? " single-col" : ""}`}>
         {plans.map((p) => {
-          const isBusy = busyPlan === p.id;
+          const isPremCard = p.id === "premium";
           return (
-            <div
-              key={p.id}
-              className={`pricing-card${p.popular ? " popular" : ""}`}
-            >
-              {p.popular && <span className="pricing-ribbon">Most Popular</span>}
+            <div key={p.id} className={`pricing-card${p.popular ? " popular" : ""}`}>
+              {p.popular && <span className="pricing-ribbon">30 Songs for 30 Days</span>}
               <div className="pricing-top">
-                <span className="eyebrow" style={{ fontSize: "0.7rem" }}>
+                <span className="eyebrow" style={{ fontSize: "0.72rem" }}>
                   {p.perSongInr}
                 </span>
-                <h3 style={{ marginTop: 8, fontSize: "1.45rem" }}>{p.name}</h3>
+                <h3 style={{ marginTop: 8, fontSize: "1.6rem" }}>{p.name}</h3>
                 <div className="pricing-price">
                   <span className="amt">₹{p.priceInr}</span>
                   <span className="allowance">
-                    / {p.songs} {p.songs === 1 ? "song" : "songs"}
+                    {isPremCard ? "/ month (30 days · 30 songs)" : "/ 1 free song per account"}
                   </span>
                 </div>
                 <p className="pricing-tagline">{p.tagline}</p>
@@ -232,19 +270,57 @@ export default function PricingCards({ compact = false }: { compact?: boolean })
                 ))}
               </ul>
 
+              {isPremCard && (
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 10,
+                    padding: "12px 14px",
+                    borderRadius: 14,
+                    background: "var(--cream)",
+                    border: "1px solid var(--line)",
+                    fontSize: "0.8rem",
+                    color: "var(--ink)",
+                    lineHeight: 1.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={(e) => {
+                      setAcceptedTerms(e.target.checked);
+                      if (e.target.checked) setError(null);
+                    }}
+                    style={{ marginTop: 3, accentColor: "var(--forest)", width: 16, height: 16, flexShrink: 0 }}
+                  />
+                  <span>
+                    I have read and agree to the{" "}
+                    <Link href="/terms" style={{ textDecoration: "underline", color: "var(--forest)", fontWeight: 600 }}>
+                      Terms &amp; Conditions
+                    </Link>
+                    : Studio Premium is valid for <strong>30 songs or 30 days</strong> from the exact time of purchase
+                    (whichever comes first), after which the Premium tag is removed and AI Stem locks until renewed.
+                  </span>
+                </label>
+              )}
+
               <button
                 type="button"
                 onClick={() => handleBuy(p.id)}
-                disabled={busyPlan !== null}
-                className={`btn ${p.popular || p.id !== "free" ? "btn-primary" : "btn-ghost"}`}
+                disabled={busy}
+                className={`btn ${isPremCard ? "btn-primary" : "btn-ghost"}`}
                 style={{ width: "100%", marginTop: "auto" }}
               >
-                {isBusy
+                {busy && isPremCard
                   ? "Opening Razorpay…"
-                  : p.id === "free"
-                    ? "Try 1 Free Song"
-                    : `Buy ${p.songs} Songs · ₹${p.priceInr}`}
-                {!isBusy && <Arrow size={15} className="arrow" />}
+                  : isPremCard
+                    ? isPremium
+                      ? "Renew Studio Premium · ₹15"
+                      : "Unlock 30 Songs for 30 Days · ₹15"
+                    : "Try 1 Free Song"}
+                {!(busy && isPremCard) && <Arrow size={15} className="arrow" />}
               </button>
             </div>
           );

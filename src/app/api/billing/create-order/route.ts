@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   const session = await getSession();
   if (!session?.user?.email) {
-    return NextResponse.json({ error: "Please sign in before purchasing a studio plan." }, { status: 401 });
+    return NextResponse.json({ error: "Please sign in before purchasing Studio Premium." }, { status: 401 });
   }
 
   const rl = checkRateLimit(`order:${session.user.email}`, { maxRequests: 15, windowMs: 10 * 60 * 1000 });
@@ -19,17 +19,21 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { planId?: string };
+  let body: { planId?: string; acceptedTerms?: boolean };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid request payload." }, { status: 400 });
   }
 
-  const plan = getPlanById(body.planId ?? "");
-  if (!plan || plan.priceInr <= 0) {
-    return NextResponse.json({ error: "Please select a valid paid studio plan." }, { status: 400 });
+  if (!body.acceptedTerms) {
+    return NextResponse.json(
+      { error: "Please accept the Terms & Conditions before proceeding to Razorpay payment." },
+      { status: 400 }
+    );
   }
+
+  const plan = getPlanById("premium")!;
 
   if (!isRazorpayConfigured()) {
     return NextResponse.json(
@@ -45,7 +49,7 @@ export async function POST(req: Request) {
   const keySecret = process.env.RAZORPAY_KEY_SECRET!;
   const basicAuth = Buffer.from(`${keyId}:${keySecret}`, "utf8").toString("base64");
 
-  const receipt = `sw_${plan.id}_${Date.now()}`;
+  const receipt = `sw_prem_${Date.now()}`;
   const orderRes = await fetch("https://api.razorpay.com/v1/orders", {
     method: "POST",
     headers: {
@@ -58,8 +62,10 @@ export async function POST(req: Request) {
       receipt,
       notes: {
         email: session.user.email.toLowerCase(),
-        planId: plan.id,
-        songs: String(plan.songs),
+        planId: "premium",
+        songs: "30",
+        durationDays: "30",
+        acceptedTerms: "true",
       },
     }),
   });

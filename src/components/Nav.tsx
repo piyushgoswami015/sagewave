@@ -3,15 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { signIn, signOut, useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { Mark } from "./Icons";
 
 const LINKS = [
   { href: "/dashboard", label: "Dashboard", short: "Dashboard" },
-  { href: "/stem-split", label: "AI Stem Studio", short: "Stem Studio" },
-  { href: "/reel-to-mp3", label: "Audio Extractor", short: "Audio MP3" },
-  { href: "/reel-download", label: "Clip Archiver", short: "Clip MP4" },
-  // { href: "/pricing", label: "Pricing", short: "Pricing" },
+  { href: "/stem-split", label: "AI Stem Studio", short: "Stems" },
+  { href: "/reel-to-mp3", label: "Audio Extractor", short: "MP3" },
+  { href: "/reel-download", label: "Clip Archiver", short: "MP4" },
+  { href: "/pricing", label: "Pricing", short: "Pricing" },
 ];
 
 const GUEST_STORAGE_KEY = "sagewave_guest_user";
@@ -21,6 +21,7 @@ export default function Nav() {
   const { data: session, status } = useSession();
   const [scrolled, setScrolled] = useState(false);
   const [guest, setGuest] = useState<{ name: string; email: string } | null>(null);
+  const [isPremium, setIsPremium] = useState(false);
 
   useEffect(() => {
     const on = () => setScrolled(window.scrollY > 8);
@@ -46,6 +47,24 @@ export default function Nav() {
       window.removeEventListener("sagewave-auth", sync);
     };
   }, [pathname]);
+
+  useEffect(() => {
+    const checkPremium = async () => {
+      if (status !== "authenticated") {
+        setIsPremium(false);
+        return;
+      }
+      try {
+        const res = await fetch("/api/billing/wallet", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        setIsPremium(Boolean(data.isPremium));
+      } catch {}
+    };
+    checkPremium();
+    window.addEventListener("sagewave-wallet", checkPremium);
+    return () => window.removeEventListener("sagewave-wallet", checkPremium);
+  }, [status, pathname]);
 
   const activeUser = session?.user ?? guest;
   const name = activeUser?.name ?? activeUser?.email ?? "";
@@ -100,13 +119,32 @@ export default function Nav() {
                   )}
                 </div>
                 <span className="user-name">{activeUser.name?.split(" ")[0]}</span>
+                {isPremium && (
+                  <span
+                    style={{
+                      background: "var(--forest)",
+                      color: "var(--cream)",
+                      fontSize: "0.68rem",
+                      fontWeight: 700,
+                      letterSpacing: "0.06em",
+                      padding: "3px 8px",
+                      borderRadius: 999,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    ★ PREMIUM
+                  </span>
+                )}
               </div>
               <button className="btn btn-ghost btn-sm" onClick={handleLogout}>
                 Log out
               </button>
             </>
           ) : pathname === "/login" ? null : (
-            <Link className="btn btn-primary btn-sm" href={`/login?callbackUrl=${encodeURIComponent(pathname === "/" ? "/dashboard" : pathname)}`}>
+            <Link
+              className="btn btn-primary btn-sm"
+              href={`/login?callbackUrl=${encodeURIComponent(pathname === "/" ? "/dashboard" : pathname)}`}
+            >
               Log in
             </Link>
           )}
