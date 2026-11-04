@@ -5,8 +5,10 @@ import { createJobDir, jobDir, readMeta, run, writeMeta } from "./jobs";
 import { demucsSemaphore } from "./ratelimit";
 
 const API = "https://api.replicate.com/v1";
-const HF_DEMUCS_SPACE = process.env.HF_DEMUCS_SPACE_URL || "https://abidlabs-music-separation.hf.space";
-const HF_DEMUCS_4STEM_SPACE = process.env.HF_DEMUCS_FALLBACK_URL || "https://nakas-demucs-playground.hf.space";
+const HF_DEMUCS_SPACE = process.env.HF_DEMUCS_SPACE_URL || "https://iqbalzz-vocals-instrumentals.hf.space";
+const HF_DEMUCS_FALLBACK_SPACE = process.env.HF_DEMUCS_FALLBACK_URL || "https://csukuangfj-music-source-separation.hf.space";
+const HF_DEMUCS_ZERO_SPACE = "https://abidlabs-music-separation.hf.space";
+const HF_DEMUCS_4STEM_SPACE = "https://nakas-demucs-playground.hf.space";
 
 export interface StemFile {
   key: string; // instrumental | vocals | drums | bass | other ...
@@ -72,10 +74,107 @@ async function download(url: string, dest: string) {
  * Secondary: nakas-demucs-playground (Demucs 4-stem Vocals, Bass, Drums, Other)
  * Never falls back to non-AI DSP filters — if cloud AI is unreachable, fails cleanly and refunds the user's credit.
  */
-async function callAbidlabsDemucs(buf: Buffer, sourceFile: string): Promise<Array<{ url?: string; path?: string }>> {
+/**
+ * Demucs v4 AI separation via iqbalzz-vocals-instrumentals (CPU dedicated worker — no ZeroGPU quota / timeouts).
+ */
+async function callIqbalzzDemucs(
+  buf: Buffer,
+  sourceFile: string
+): Promise<{ vocalsUrl: string; instUrl: string }> {
+  const b64 = buf.toString("base64");
+  const ext = path.extname(sourceFile) || ".mp3";
+  const res = await fetch(`${HF_DEMUCS_SPACE}/run/predict`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      data: [{ name: `input${ext}`, data: `data:audio/mpeg;base64,${b64}` }],
+    }),
+    signal: AbortSignal.timeout(240_000),
+  });
+  if (!res.ok) throw new Error(`Primary Demucs HTTP ${res.status}`);
+  const json = (await res.json()) as { data?: Array<{ name?: string }> };
+  const items = json.data;
+  if (!items || items.length < 2 || !items[0]?.name || !items[1]?.name) {
+    throw new Error("Primary Demucs did not return valid vocal and instrumental stems.");
+  }
+  return {
+    vocalsUrl: `${HF_DEMUCS_SPACE}/file=${items[0].name}`,
+    instUrl: `${HF_DEMUCS_SPACE}/file=${items[1].name}`,
+  };
+}
+
+/**
+ * Secondary Neural Source Separator via csukuangfj-music-source-separation.
+ */
+async function callCsukuangfjDemucs(
+  buf: Buffer,
+  sourceFile: string
+): Promise<{ vocalsUrl: string; instUrl: string }> {
   const fd = new FormData();
   fd.append("files", new Blob([new Uint8Array(buf)], { type: "audio/mpeg" }), path.basename(sourceFile));
-  const upRes = await fetch(`${HF_DEMUCS_SPACE}/gradio_api/upload`, {
+  const upRes = await fetch(`${HF_DEMUCS_FALLBACK_SPACE}/upload`, {
+    method: "POST",
+    body: fd,
+    signal: AbortSignal.timeout(90_000),
+  });
+  if (!upRes.ok) throw new Error(`Fallback upload failed (${upRes.status})`);
+  const upJson = (await upRes.json()) as string[];
+  const remotePath = upJson?.[0];
+  if (!remotePath) throw new Error("No upload path returned.");
+
+  const callRes = await fetch(`${HF_DEMUCS_FALLBACK_SPACE}/call/process_uploaded_file`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      data: [{ path: remotePath, meta: { _type: "gradio.FileData" } }],
+    }),
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!callRes.ok) throw new Error(`Fallback inference call failed (${callRes.status})`);
+  const { event_id: eventId } = (await callRes.json()) as { event_id?: string };
+  if (!eventId) throw new Error("No event_id returned from fallback Space.");
+
+  const sseRes = await fetch(`${HF_DEMUCS_FALLBACK_SPACE}/call/process_uploaded_file/${eventId}`, {
+    signal: AbortSignal.timeout(240_000),
+  });
+  if (!sseRes.ok) throw new Error(`Fallback SSE stream failed (${sseRes.status})`);
+  const sseText = await sseRes.text();
+
+  let resultItems: Array<{ url?: string; path?: string }> | null = null;
+  const lines = sseText.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith("event: complete")) {
+      const dataLine = lines.slice(i + 1).find((l) => l.startsWith("data: "));
+      if (dataLine) {
+        resultItems = JSON.parse(dataLine.slice(6));
+        break;
+      }
+    }
+  }
+
+  if (!resultItems || resultItems.length < 2) {
+    throw new Error("Fallback Space did not return vocal and instrumental stems.");
+  }
+
+  const resolveUrl = (item: { url?: string; path?: string }) =>
+    item.url || `${HF_DEMUCS_FALLBACK_SPACE}/file=${item.path}`;
+
+  return {
+    vocalsUrl: resolveUrl(resultItems[0]),
+    instUrl: resolveUrl(resultItems[1]),
+  };
+}
+
+/**
+ * Tertiary ZeroGPU Demucs Space (abidlabs-music-separation).
+ */
+async function callAbidlabsDemucs(
+  buf: Buffer,
+  sourceFile: string
+): Promise<{ vocalsUrl: string; instUrl: string }> {
+  const fd = new FormData();
+  fd.append("files", new Blob([new Uint8Array(buf)], { type: "audio/mpeg" }), path.basename(sourceFile));
+  const upRes = await fetch(`${HF_DEMUCS_ZERO_SPACE}/gradio_api/upload`, {
     method: "POST",
     body: fd,
     signal: AbortSignal.timeout(90_000),
@@ -85,7 +184,7 @@ async function callAbidlabsDemucs(buf: Buffer, sourceFile: string): Promise<Arra
   const remotePath = upJson?.[0];
   if (!remotePath) throw new Error("No upload path returned from Demucs Space.");
 
-  const callRes = await fetch(`${HF_DEMUCS_SPACE}/gradio_api/call/inference`, {
+  const callRes = await fetch(`${HF_DEMUCS_ZERO_SPACE}/gradio_api/call/inference`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -97,9 +196,8 @@ async function callAbidlabsDemucs(buf: Buffer, sourceFile: string): Promise<Arra
   const { event_id: eventId } = (await callRes.json()) as { event_id?: string };
   if (!eventId) throw new Error("No event_id returned from Demucs Space.");
 
-  // Allow up to 7 minutes for full-length 320 kbps tracks on Hugging Face Demucs so real AI separation is never cut off early
-  const sseRes = await fetch(`${HF_DEMUCS_SPACE}/gradio_api/call/inference/${eventId}`, {
-    signal: AbortSignal.timeout(420_000),
+  const sseRes = await fetch(`${HF_DEMUCS_ZERO_SPACE}/gradio_api/call/inference/${eventId}`, {
+    signal: AbortSignal.timeout(300_000),
   });
   if (!sseRes.ok) throw new Error(`HF SSE stream failed (${sseRes.status})`);
   const sseText = await sseRes.text();
@@ -119,7 +217,14 @@ async function callAbidlabsDemucs(buf: Buffer, sourceFile: string): Promise<Arra
   if (!resultItems || resultItems.length < 2) {
     throw new Error("Demucs Space did not return vocal and instrumental stems.");
   }
-  return resultItems;
+
+  const resolveUrl = (item: { url?: string; path?: string }) =>
+    item.url || `${HF_DEMUCS_ZERO_SPACE}/gradio_api/file=${item.path}`;
+
+  return {
+    vocalsUrl: resolveUrl(resultItems[0]),
+    instUrl: resolveUrl(resultItems[1]),
+  };
 }
 
 async function separateWithHuggingFaceDemucs(
@@ -134,151 +239,92 @@ async function separateWithHuggingFaceDemucs(
     "track";
   const srcPath = path.join(dir, sourceFile);
 
+  const buf = await fs.readFile(srcPath);
+
+  // Try primary Demucs worker first, fail over seamlessly across secondary workers
+  let stemUrls: { vocalsUrl: string; instUrl: string } | null = null;
+  const errors: string[] = [];
+
   try {
-    const buf = await fs.readFile(srcPath);
-
-    let resultItems: Array<{ url?: string; path?: string }>;
+    stemUrls = await callIqbalzzDemucs(buf, sourceFile);
+  } catch (e1) {
+    errors.push(`Primary: ${(e1 as Error).message}`);
     try {
-      resultItems = await callAbidlabsDemucs(buf, sourceFile);
-    } catch {
-      // Retry primary Demucs AI once before falling back
-      resultItems = await callAbidlabsDemucs(buf, sourceFile);
-    }
-
-    meta.status = "finishing";
-    await writeMeta(dir, meta);
-
-    const resolveUrl = (item: { url?: string; path?: string }) =>
-      item.url || `${HF_DEMUCS_SPACE}/gradio_api/file=${item.path}`;
-
-    const rawVocals = path.join(dir, "raw_vocals.wav");
-    const rawInst = path.join(dir, "raw_instrumental.wav");
-    await Promise.all([
-      download(resolveUrl(resultItems[0]), rawVocals),
-      download(resolveUrl(resultItems[1]), rawInst),
-    ]);
-
-    const instName = `${base}-instrumental.mp3`;
-    const vocName = `${base}-vocals.mp3`;
-    const bassName = `${base}-bass.mp3`;
-    const melodyName = `${base}-other.mp3`;
-
-    // Encode crisp 320 kbps MP3s sequentially from pure Demucs AI stems (4th-order 24dB/oct sub-bass & harmonic split on clean instrumental)
-    await run(ffmpeg, ["-y", "-i", rawInst, ...enc, path.join(dir, instName)]);
-    await run(ffmpeg, ["-y", "-i", rawVocals, ...enc, path.join(dir, vocName)]);
-    await run(ffmpeg, [
-      "-y",
-      "-i",
-      rawInst,
-      "-af",
-      "lowpass=f=145:poles=2,lowpass=f=145:poles=2,volume=1.35",
-      ...enc,
-      path.join(dir, bassName),
-    ]);
-    await run(ffmpeg, [
-      "-y",
-      "-i",
-      rawInst,
-      "-af",
-      "highpass=f=160:poles=2,highpass=f=160:poles=2",
-      ...enc,
-      path.join(dir, melodyName),
-    ]);
-
-    // Delete large raw WAV files immediately to free container memory/disk
-    await Promise.all([
-      fs.unlink(rawVocals).catch(() => {}),
-      fs.unlink(rawInst).catch(() => {}),
-    ]);
-
-    const files: StemFile[] = [];
-    const push = async (key: string, file: string) => {
-      const st = await fs.stat(path.join(dir, file));
-      files.push({ key, label: LABELS[key] ?? key, file, size: st.size });
-    };
-    await push("instrumental", instName);
-    await push("vocals", vocName);
-    await push("bass", bassName);
-    await push("other", melodyName);
-
-    meta.status = "done";
-    meta.files = files;
-    await writeMeta(dir, meta);
-  } catch {
-    // Fallback to Secondary 4-Stem Demucs Space (nakas-demucs-playground)
-    try {
-      const buf = await fs.readFile(srcPath);
-      const b64 = buf.toString("base64");
-      const res4 = await fetch(`${HF_DEMUCS_4STEM_SPACE}/run/predict`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          data: [{ name: path.basename(sourceFile), data: `data:audio/mpeg;base64,${b64}` }],
-        }),
-        signal: AbortSignal.timeout(180_000),
-      });
-      if (!res4.ok) throw new Error(`4-stem HF space error ${res4.status}`);
-      const json4 = (await res4.json()) as { data?: Array<{ name?: string; data?: string }> };
-      const stems4 = json4.data;
-      if (!stems4 || stems4.length < 4) throw new Error("Incomplete 4-stem output");
-
-      meta.status = "finishing";
-      await writeMeta(dir, meta);
-
-      const keys = ["vocals", "bass", "drums", "other"] as const;
-      const rawPaths: Record<string, string> = {};
-      await Promise.all(
-        keys.map(async (k, idx) => {
-          const item = stems4[idx];
-          const p = path.join(dir, `raw_${k}.wav`);
-          if (item.data && item.data.includes(",")) {
-            await fs.writeFile(p, Buffer.from(item.data.split(",")[1], "base64"));
-          } else if (item.name) {
-            await download(`${HF_DEMUCS_4STEM_SPACE}/file=${item.name}`, p);
-          }
-          rawPaths[k] = p;
-        })
-      );
-
-      const instName = `${base}-instrumental.mp3`;
-      await run(ffmpeg, [
-        "-y",
-        "-i",
-        rawPaths.bass,
-        "-i",
-        rawPaths.drums,
-        "-i",
-        rawPaths.other,
-        "-filter_complex",
-        "amix=inputs=3:normalize=0:duration=longest",
-        ...enc,
-        path.join(dir, instName),
-      ]);
-
-      const files: StemFile[] = [];
-      const push = async (key: string, file: string) => {
-        const st = await fs.stat(path.join(dir, file));
-        files.push({ key, label: LABELS[key] ?? key, file, size: st.size });
-      };
-      await push("instrumental", instName);
-
-      for (const k of keys) {
-        const name = `${base}-${k}.mp3`;
-        await run(ffmpeg, ["-y", "-i", rawPaths[k], ...enc, path.join(dir, name)]);
-        await push(k, name);
-        await fs.unlink(rawPaths[k]).catch(() => {});
+      stemUrls = await callCsukuangfjDemucs(buf, sourceFile);
+    } catch (e2) {
+      errors.push(`Secondary: ${(e2 as Error).message}`);
+      try {
+        stemUrls = await callAbidlabsDemucs(buf, sourceFile);
+      } catch (e3) {
+        errors.push(`Tertiary: ${(e3 as Error).message}`);
       }
-
-      meta.status = "done";
-      meta.files = files;
-      await writeMeta(dir, meta);
-    } catch {
-      meta.status = "failed";
-      meta.error =
-        "The AI separation GPU is currently busy on this track. Please try again in a moment — your song credit has been refunded.";
-      await writeMeta(dir, meta);
     }
   }
+
+  if (!stemUrls) {
+    meta.status = "failed";
+    meta.error =
+      "The AI separation servers are currently under high load. Your song credit has been refunded automatically — please try again in a moment.";
+    await writeMeta(dir, meta);
+    return;
+  }
+
+  meta.status = "finishing";
+  await writeMeta(dir, meta);
+
+  const rawVocals = path.join(dir, "raw_vocals.wav");
+  const rawInst = path.join(dir, "raw_instrumental.wav");
+  await Promise.all([
+    download(stemUrls.vocalsUrl, rawVocals),
+    download(stemUrls.instUrl, rawInst),
+  ]);
+
+  const instName = `${base}-instrumental.mp3`;
+  const vocName = `${base}-vocals.mp3`;
+  const bassName = `${base}-bass.mp3`;
+  const melodyName = `${base}-other.mp3`;
+
+  // Encode crisp 320 kbps MP3s sequentially from pure Demucs AI stems (4th-order 24dB/oct sub-bass & harmonic split on clean instrumental)
+  await run(ffmpeg, ["-y", "-i", rawInst, ...enc, path.join(dir, instName)]);
+  await run(ffmpeg, ["-y", "-i", rawVocals, ...enc, path.join(dir, vocName)]);
+  await run(ffmpeg, [
+    "-y",
+    "-i",
+    rawInst,
+    "-af",
+    "lowpass=f=145:poles=2,lowpass=f=145:poles=2,volume=1.35",
+    ...enc,
+    path.join(dir, bassName),
+  ]);
+  await run(ffmpeg, [
+    "-y",
+    "-i",
+    rawInst,
+    "-af",
+    "highpass=f=160:poles=2,highpass=f=160:poles=2",
+    ...enc,
+    path.join(dir, melodyName),
+  ]);
+
+  // Delete large raw WAV files immediately to free container memory/disk
+  await Promise.all([
+    fs.unlink(rawVocals).catch(() => {}),
+    fs.unlink(rawInst).catch(() => {}),
+  ]);
+
+  const files: StemFile[] = [];
+  const push = async (key: string, file: string) => {
+    const st = await fs.stat(path.join(dir, file));
+    files.push({ key, label: LABELS[key] ?? key, file, size: st.size });
+  };
+  await push("instrumental", instName);
+  await push("vocals", vocName);
+  await push("bass", bassName);
+  await push("other", melodyName);
+
+  meta.status = "done";
+  meta.files = files;
+  await writeMeta(dir, meta);
 }
 
 /**

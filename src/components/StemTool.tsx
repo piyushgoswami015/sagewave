@@ -8,7 +8,7 @@ import AudioPlayer from "./AudioPlayer";
 import PricingCards from "./PricingCards";
 import Progress from "./Progress";
 import { Alert, Check, Close, Download, Layers, Music, Refresh, Upload } from "./Icons";
-import { addStudioHistory } from "@/lib/history";
+import { addStudioHistory, removeStudioHistory } from "@/lib/history";
 
 interface StemFile {
   key: string;
@@ -174,6 +174,7 @@ export default function StemTool() {
         } catch (err) {
           stopTimers();
           clearActiveJob();
+          removeStudioHistory(id);
           setResumeName(null);
           setError(`${(err as Error).message} Any song credit used for this attempt is refunded automatically.`);
           setBusy(false);

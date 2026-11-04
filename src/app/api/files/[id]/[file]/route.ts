@@ -48,6 +48,18 @@ function streamFile(filePath: string, opts?: { start?: number; end?: number }): 
  * GET /api/files/:id/:file            → inline (for players / previews), supports Range
  * GET /api/files/:id/:file?download=1 → attachment with a friendly filename
  */
+export async function HEAD(req: Request, ctx: { params: Promise<{ id: string; file: string }> }) {
+  const { id, file } = await ctx.params;
+  if (!isValidJobId(id) || !SAFE_NAME.test(file)) {
+    return new NextResponse(null, { status: 404 });
+  }
+  const dir = jobDir(id);
+  const full = path.join(dir, file);
+  const st = await fs.stat(full).catch(() => null);
+  if (!st || !st.isFile()) return new NextResponse(null, { status: 404 });
+  return new NextResponse(null, { status: 200 });
+}
+
 export async function GET(req: Request, ctx: { params: Promise<{ id: string; file: string }> }) {
   const session = await getSession();
   if (!session?.user) return new NextResponse("Unauthorized", { status: 401 });

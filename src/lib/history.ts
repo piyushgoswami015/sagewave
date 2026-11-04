@@ -33,3 +33,23 @@ export function getStudioHistory(): StudioHistoryItem[] {
     return [];
   }
 }
+
+export function removeStudioHistory(id: string) {
+  try {
+    const existing = getStudioHistory();
+    const updated = existing.filter((x) => x.id !== id);
+    localStorage.setItem(KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event("sagewave-history"));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearStudioHistory() {
+  try {
+    localStorage.removeItem(KEY);
+    window.dispatchEvent(new Event("sagewave-history"));
+  } catch {
+    /* ignore */
+  }
+}

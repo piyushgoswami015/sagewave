@@ -2,18 +2,42 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowUpRight, Clock, Download, Film, Layers, Music } from "@/components/Icons";
-import { getStudioHistory, type StudioHistoryItem } from "@/lib/history";
+import { ArrowUpRight, Clock, Close, Download, Film, Layers, Music } from "@/components/Icons";
+import { clearStudioHistory, getStudioHistory, removeStudioHistory, type StudioHistoryItem } from "@/lib/history";
 
 export default function RecentHistory() {
   const [items, setItems] = useState<StudioHistoryItem[]>([]);
 
   useEffect(() => {
-    const sync = () => setItems(getStudioHistory());
+    let cancelled = false;
+    const sync = async () => {
+      const all = getStudioHistory();
+      if (!cancelled) setItems(all);
+
+      // Verify that files actually exist on the server; purge broken/incomplete files from history
+      const valid: StudioHistoryItem[] = [];
+      for (const item of all) {
+        try {
+          const res = await fetch(item.downloadUrl, { method: "HEAD" });
+          if (res.ok) {
+            valid.push(item);
+          } else if (res.status === 404) {
+            removeStudioHistory(item.id);
+          } else {
+            valid.push(item);
+          }
+        } catch {
+          valid.push(item);
+        }
+      }
+      if (!cancelled) setItems(valid);
+    };
+
     sync();
     window.addEventListener("sagewave-history", sync);
     window.addEventListener("storage", sync);
     return () => {
+      cancelled = true;
       window.removeEventListener("sagewave-history", sync);
       window.removeEventListener("storage", sync);
     };
@@ -42,9 +66,19 @@ export default function RecentHistory() {
           <span className="eyebrow">Active Session Exports</span>
           <h3 style={{ marginTop: 6 }}>Recent Studio Files</h3>
         </div>
-        <span className="badge">
-          <Clock size={13} /> Auto-purged 60 min after creation
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span className="badge">
+            <Clock size={13} /> Auto-purged 60 min after creation
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: "0.78rem", padding: "4px 8px" }}
+            onClick={() => clearStudioHistory()}
+          >
+            Clear list
+          </button>
+        </div>
       </div>
 
       <div className="stem-list">
@@ -66,6 +100,15 @@ export default function RecentHistory() {
             <a className="btn btn-primary btn-sm" href={item.downloadUrl} download>
               <Download size={15} /> Download
             </a>
+            <button
+              type="button"
+              className="x"
+              onClick={() => removeStudioHistory(item.id)}
+              aria-label={`Remove ${item.title}`}
+              title="Remove from history"
+            >
+              <Close size={15} />
+            </button>
           </div>
         ))}
       </div>
