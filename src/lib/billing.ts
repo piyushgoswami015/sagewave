@@ -80,6 +80,7 @@ export function getPlanById(planId: string): PricingPlan | undefined {
 /**
  * Enforces expiry rules:
  * 1) premium + (30 days elapsed OR credits exhausted) -> expired, credits 0.
+ * 2) free trial + 1 song processed -> locked permanently at 0 credits until upgrading to Premium.
  */
 function enforceWalletLifecycle(wallet: UserWallet): boolean {
   let dirty = false;
@@ -100,9 +101,20 @@ function enforceWalletLifecycle(wallet: UserWallet): boolean {
       wallet.isPremium = true;
       dirty = true;
     }
-  } else if (wallet.isPremium) {
-    wallet.isPremium = false;
-    dirty = true;
+  } else {
+    // Non-premium (free trial or expired):
+    if (wallet.isPremium) {
+      wallet.isPremium = false;
+      dirty = true;
+    }
+    // If the account has already processed at least 1 song, the Free Trial is used up permanently.
+    const hasPending = wallet.pendingJobs && Object.keys(wallet.pendingJobs).length > 0;
+    if (wallet.totalSongsProcessed >= 1 && !hasPending && wallet.credits > 0) {
+      wallet.credits = 0;
+      wallet.plan = "expired";
+      wallet.updatedAt = new Date(now).toISOString();
+      dirty = true;
+    }
   }
 
   return dirty;
@@ -148,8 +160,12 @@ async function reconcilePendingJobs(wallet: UserWallet): Promise<boolean> {
 
     if (meta?.status === "done") {
       delete pending[jobId];
+      if (!wallet.isPremium && wallet.totalSongsProcessed >= 1) {
+        wallet.credits = 0;
+        wallet.plan = "expired";
+      }
       dirty = true;
-    } else if (!meta || meta.status === "failed" || age > STALE_JOB_MS) {
+    } else if (meta?.status === "failed" || age > STALE_JOB_MS) {
       delete pending[jobId];
       applyRefund(wallet);
       dirty = true;
@@ -251,8 +267,16 @@ export function settleJob(rawEmail: string, jobId: string): Promise<void> {
     const email = rawEmail.trim().toLowerCase();
     const wallets = await readWallets();
     const wallet = wallets[email];
-    if (!wallet?.pendingJobs?.[jobId]) return;
-    delete wallet.pendingJobs[jobId];
+    if (!wallet) return;
+    if (wallet.pendingJobs) {
+      delete wallet.pendingJobs[jobId];
+    }
+    // Settle permanently: if this account has completed a song and is not on active Premium, lock at 0 credits.
+    if (!wallet.isPremium && wallet.totalSongsProcessed >= 1) {
+      wallet.credits = 0;
+      wallet.plan = "expired";
+      wallet.updatedAt = new Date().toISOString();
+    }
     wallets[email] = wallet;
     await writeWallets(wallets);
   });

@@ -159,7 +159,8 @@ export default function StemTool() {
               });
             }
             setBusy(false);
-            loadWallet();
+            await loadWallet();
+            window.dispatchEvent(new Event("sagewave-wallet"));
             return;
           }
           if (s.status === "failed") throw new Error(s.error || "Separation failed.");
@@ -307,6 +308,7 @@ export default function StemTool() {
     setPct(0);
     setPhase(0);
     loadWallet();
+    window.dispatchEvent(new Event("sagewave-wallet"));
   };
 
   const expDateStr = expiresAt
