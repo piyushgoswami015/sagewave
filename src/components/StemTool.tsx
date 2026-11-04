@@ -396,7 +396,7 @@ export default function StemTool() {
                 <Download size={16} /> Download
               </a>
             </div>
-            <AudioPlayer src={url(inst)} bars={72} />
+            <AudioPlayer src={url(inst)} bars={52} />
           </div>
         )}
 
@@ -407,7 +407,7 @@ export default function StemTool() {
               {rest.map((f) => (
                 <div className="stem-row" key={f.key}>
                   <span className="lbl">{f.label}</span>
-                  <AudioPlayer src={url(f)} bars={48} />
+                  <AudioPlayer src={url(f)} bars={40} />
                   <a className="icon-btn" href={`${url(f)}?download=1`} download aria-label={`Download ${f.label}`}>
                     <Download size={16} />
                   </a>
@@ -421,7 +421,7 @@ export default function StemTool() {
           <button className="btn btn-ghost" onClick={reset}>
             <Refresh size={16} /> Separate another track
           </button>
-          {!isPremium && (
+          {credits !== null && !isPremium && (
             <Link href="/pricing" className="btn btn-light">
               Unlock 30 Songs for 30 Days · ₹15
             </Link>

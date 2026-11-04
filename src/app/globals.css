@@ -452,6 +452,8 @@ p { margin: 0; }
   background: var(--cream);
   border: 1px solid var(--line);
   border-radius: 999px;
+  max-width: 100%;
+  overflow: hidden;
 }
 .play {
   width: 48px; height: 48px; border-radius: 50%; border: 0;
@@ -460,10 +462,10 @@ p { margin: 0; }
   transition: transform 0.2s var(--ease), background 0.2s;
 }
 .play:hover { background: var(--forest-2); transform: scale(1.05); }
-.wave { flex: 1; height: 40px; display: flex; align-items: center; gap: 2px; cursor: pointer; min-width: 0; }
-.wave i { flex: 1; min-width: 1.5px; border-radius: 2px; background: var(--line-strong); transition: background 0.15s; }
+.wave { flex: 1; height: 40px; display: flex; align-items: center; gap: 2px; cursor: pointer; min-width: 0; overflow: hidden; }
+.wave i { flex: 1 1 0; min-width: 0; border-radius: 2px; background: var(--line-strong); transition: background 0.15s; }
 .wave i.on { background: var(--moss); }
-.time { font-variant-numeric: tabular-nums; font-size: 0.82rem; color: var(--muted); min-width: 84px; text-align: right; }
+.time { font-variant-numeric: tabular-nums; font-size: 0.82rem; color: var(--muted); min-width: 84px; text-align: right; flex-shrink: 0; white-space: nowrap; }
 
 /* Dropzone */
 .dropzone {
@@ -537,9 +539,11 @@ p { margin: 0; }
 }
 .icon-btn:hover { background: var(--forest); color: var(--cream); }
 @media (max-width: 640px) {
-  .stem-row { grid-template-columns: 1fr auto; }
+  .stem-hero { padding: 20px 16px; }
+  .stem-row { grid-template-columns: 1fr auto; padding: 12px 14px; gap: 10px; }
   .stem-row .player { grid-column: 1 / -1; order: 3; }
-  .stem-row .time { display: none; }
+  .stem-row .time { font-size: 0.72rem; min-width: 58px; }
+  .wave { gap: 1.5px; }
 }
 
 .quality-select { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
@@ -936,9 +940,9 @@ p { margin: 0; }
   .url-field .paste-btn { height: 34px; padding: 0 10px; margin-left: auto; }
   .url-field .btn { flex: 1; width: 100%; --h: 44px; }
   .phases { flex-direction: column; gap: 8px; }
-  .player { padding: 10px 12px; gap: 10px; }
-  .play { width: 40px; height: 40px; }
-  .time { font-size: 0.74rem; min-width: 66px; }
+  .player { padding: 8px 12px 8px 10px; gap: 10px; }
+  .play { width: 38px; height: 38px; }
+  .time { font-size: 0.72rem; min-width: 62px; }
   .result-head { align-items: flex-start; gap: 12px; }
   .thumb { width: 58px; height: 58px; border-radius: 12px; }
   .result-actions .btn { flex: 1 1 100%; width: 100%; }
@@ -951,9 +955,9 @@ p { margin: 0; }
     width: 100%;
     justify-content: center;
   }
-  .stem-row { grid-template-columns: 1fr auto; }
+  .stem-row { grid-template-columns: 1fr auto; padding: 12px 14px; gap: 10px; }
   .stem-row .player { grid-column: 1 / -1; order: 3; }
-  .stem-row .time { display: none; }
+  .stem-row .time { font-size: 0.72rem; min-width: 58px; }
   .photo-credit { display: none; }
   .footer { padding: 32px 0 40px; }
   .footer-inner { flex-direction: column; align-items: flex-start; gap: 16px; }
