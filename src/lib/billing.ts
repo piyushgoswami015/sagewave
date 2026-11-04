@@ -1,8 +1,7 @@
 import crypto from "node:crypto";
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import { jobDir, readMeta, writeMeta } from "./jobs";
 import { PRICING_PLANS, type PlanId, type PricingPlan } from "./plans";
+import { kvGet, kvSet } from "./store";
 
 export { PRICING_PLANS, type PlanId, type PricingPlan };
 
@@ -30,8 +29,6 @@ export interface UserWallet {
   updatedAt: string;
 }
 
-const DATA_DIR = path.join(process.cwd(), ".data");
-const WALLETS_FILE = path.join(DATA_DIR, "wallets.json");
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 /** A separation job that has not finished after this long is treated as failed and its credit is refunded. */
 export const STALE_JOB_MS = 8 * 60 * 1000;
@@ -45,17 +42,11 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function readWallets(): Promise<Record<string, UserWallet>> {
-  try {
-    const raw = await fs.readFile(WALLETS_FILE, "utf8");
-    return JSON.parse(raw) as Record<string, UserWallet>;
-  } catch {
-    return {};
-  }
+  return kvGet<Record<string, UserWallet>>("wallets", {});
 }
 
 async function writeWallets(wallets: Record<string, UserWallet>): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(WALLETS_FILE, JSON.stringify(wallets, null, 2), "utf8");
+  await kvSet("wallets", wallets);
 }
 
 function newWallet(email: string): UserWallet {

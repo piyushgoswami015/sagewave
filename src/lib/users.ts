@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import dns from "node:dns/promises";
-import { promises as fs } from "node:fs";
-import path from "node:path";
+import { kvGet, kvSet } from "./store";
 
 export interface StoredUser {
   id: string;
@@ -19,8 +18,6 @@ interface OtpEntry {
   attempts: number;
 }
 
-const DATA_DIR = path.join(process.cwd(), ".data");
-const USERS_FILE = path.join(DATA_DIR, "users.json");
 const otpStore = new Map<string, OtpEntry>();
 
 const DISPOSABLE_DOMAINS = new Set([
@@ -124,17 +121,11 @@ export async function validateDeliverableEmail(rawEmail: string): Promise<string
 }
 
 async function readUsers(): Promise<StoredUser[]> {
-  try {
-    const raw = await fs.readFile(USERS_FILE, "utf8");
-    return JSON.parse(raw) as StoredUser[];
-  } catch {
-    return [];
-  }
+  return kvGet<StoredUser[]>("users", []);
 }
 
 async function writeUsers(users: StoredUser[]): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(USERS_FILE, JSON.stringify(users, null, 2), "utf8");
+  await kvSet("users", users);
 }
 
 function hashPassword(password: string, salt: string): string {
