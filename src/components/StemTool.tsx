@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import AudioPlayer from "./AudioPlayer";
 import PricingCards from "./PricingCards";
 import Progress from "./Progress";
@@ -19,6 +19,8 @@ interface StemFile {
 
 const PHASES = ["Uploading", "Separating stems", "Mixing instrumental"];
 const MAX = 60 * 1024 * 1024;
+const ACTIVE_JOB_KEY = "sagewave_active_stem_job";
+const ACTIVE_JOB_MAX_AGE_MS = 8 * 60 * 1000;
 
 function fmtSize(b: number) {
   return b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`;
@@ -32,12 +34,14 @@ export default function StemTool() {
   const router = useRouter();
   const pathname = usePathname();
   const [file, setFile] = useState<File | null>(null);
+  const [resumeName, setResumeName] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState(0);
   const [pct, setPct] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [files, setFiles] = useState<StemFile[] | null>(null);
   const [credits, setCredits] = useState<number | null>(null);
@@ -46,8 +50,10 @@ export default function StemTool() {
   const [showUpgrade, setShowUpgrade] = useState(false);
   const tick = useRef<number | null>(null);
   const poll = useRef<number | null>(null);
+  const checkNow = useRef<(() => void) | null>(null);
+  const resumed = useRef(false);
 
-  const loadWallet = async () => {
+  const loadWallet = useCallback(async () => {
     try {
       const res = await fetch("/api/billing/wallet", { cache: "no-store" });
       if (!res.ok) return;
@@ -56,21 +62,17 @@ export default function StemTool() {
         setCredits(data.credits);
         setIsPremium(Boolean(data.isPremium));
         setExpiresAt(data.premiumExpiresAt || null);
-        if (data.credits > 0) {
-          setShowUpgrade(false);
-        } else {
-          setShowUpgrade(true);
-        }
+        setShowUpgrade(data.credits <= 0);
       }
     } catch {}
-  };
+  }, []);
 
   useEffect(() => {
     loadWallet();
     const onWallet = () => loadWallet();
     window.addEventListener("sagewave-wallet", onWallet);
     return () => window.removeEventListener("sagewave-wallet", onWallet);
-  }, [status]);
+  }, [status, loadWallet]);
 
   useEffect(
     () => () => {
@@ -79,6 +81,19 @@ export default function StemTool() {
     },
     []
   );
+
+  // Browsers throttle timers in background tabs — poll immediately when the user comes back.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") checkNow.current?.();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, []);
 
   const pick = (f: File | undefined | null) => {
     setError(null);
@@ -97,7 +112,106 @@ export default function StemTool() {
   const stopTimers = () => {
     if (tick.current) clearInterval(tick.current);
     if (poll.current) clearTimeout(poll.current);
+    checkNow.current = null;
   };
+
+  const clearActiveJob = () => {
+    try {
+      localStorage.removeItem(ACTIVE_JOB_KEY);
+    } catch {}
+  };
+
+  /**
+   * Follows a running job until it is done or failed. Used both right after upload and
+   * when the user returns to the page (tab switch / refresh) so a running job is never "lost".
+   */
+  const followJob = useCallback(
+    (id: string, displayName: string, startedAt: number) => {
+      setJobId(id);
+      setBusy(true);
+      setPhase(1);
+      setPct(18);
+      if (tick.current) clearInterval(tick.current);
+      tick.current = window.setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+
+      const check = async () => {
+        if (poll.current) clearTimeout(poll.current);
+        try {
+          const r = await fetch(`/api/stems/${id}`, { cache: "no-store" });
+          const s = await r.json();
+          if (!r.ok) throw new Error(s.error || "Lost track of the job.");
+          if (s.status === "done") {
+            stopTimers();
+            clearActiveJob();
+            setPhase(3);
+            setPct(100);
+            await new Promise((ok) => setTimeout(ok, 450));
+            setFiles(s.files);
+            const inst = (s.files as StemFile[])?.find((f) => f.key === "instrumental") ?? s.files?.[0];
+            if (inst) {
+              addStudioHistory({
+                id,
+                kind: "stems",
+                title: displayName,
+                subtitle: "4 Stems + Instrumental · 320 kbps",
+                downloadUrl: `/api/files/${id}/${inst.file}?download=1`,
+                createdAt: Date.now(),
+              });
+            }
+            setBusy(false);
+            loadWallet();
+            return;
+          }
+          if (s.status === "failed") throw new Error(s.error || "Separation failed.");
+          if (s.status === "finishing") {
+            setPhase(2);
+            setPct(92);
+          } else {
+            const k = Math.min(1, (Date.now() - startedAt) / 180000);
+            setPct(18 + 70 * (1 - Math.pow(1 - k, 2)));
+          }
+          poll.current = window.setTimeout(check, 3000);
+        } catch (err) {
+          stopTimers();
+          clearActiveJob();
+          setResumeName(null);
+          setError(`${(err as Error).message} Any song credit used for this attempt is refunded automatically.`);
+          setBusy(false);
+          // The server refunds failed jobs — refresh the counter so the user sees it.
+          setTimeout(() => {
+            loadWallet();
+            window.dispatchEvent(new Event("sagewave-wallet"));
+          }, 600);
+        }
+      };
+
+      checkNow.current = check;
+      poll.current = window.setTimeout(check, 2000);
+    },
+    [loadWallet]
+  );
+
+  // Resume a job that was still running when the user switched/closed the tab.
+  useEffect(() => {
+    if (status !== "authenticated" || resumed.current) return;
+    resumed.current = true;
+    try {
+      const raw = localStorage.getItem(ACTIVE_JOB_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { id: string; name: string; startedAt: number };
+      if (!saved?.id || Date.now() - saved.startedAt > ACTIVE_JOB_MAX_AGE_MS) {
+        clearActiveJob();
+        loadWallet();
+        return;
+      }
+      setResumeName(saved.name);
+      setNotice("Your song is still being separated — picking up where you left off.");
+      setElapsed(Math.floor((Date.now() - saved.startedAt) / 1000));
+      followJob(saved.id, saved.name, saved.startedAt);
+    } catch {
+      clearActiveJob();
+    }
+  }, [status, followJob, loadWallet]);
 
   const start = async () => {
     if (!file || busy) return;
@@ -118,6 +232,7 @@ export default function StemTool() {
 
     setBusy(true);
     setError(null);
+    setNotice(null);
     setFiles(null);
     setPhase(0);
     setPct(5);
@@ -144,10 +259,10 @@ export default function StemTool() {
         setIsPremium(Boolean(data.isPremium));
         window.dispatchEvent(new Event("sagewave-wallet"));
       }
-      setJobId(data.id);
 
       if (data.status === "done" && data.files) {
         stopTimers();
+        setJobId(data.id);
         setPhase(2);
         setPct(100);
         await new Promise((ok) => setTimeout(ok, 450));
@@ -167,53 +282,14 @@ export default function StemTool() {
         return;
       }
 
-      setPhase(1);
-      setPct(18);
-      const sepStart = Date.now();
-
-      const check = async () => {
-        try {
-          const r = await fetch(`/api/stems/${data.id}`, { cache: "no-store" });
-          const s = await r.json();
-          if (!r.ok) throw new Error(s.error || "Lost track of the job.");
-          if (s.status === "done") {
-            stopTimers();
-            setPhase(3);
-            setPct(100);
-            await new Promise((ok) => setTimeout(ok, 450));
-            setFiles(s.files);
-            const inst = (s.files as StemFile[])?.find((f) => f.key === "instrumental") ?? s.files?.[0];
-            if (inst) {
-              addStudioHistory({
-                id: data.id,
-                kind: "stems",
-                title: file.name,
-                subtitle: "4 Stems + Instrumental · 320 kbps",
-                downloadUrl: `/api/files/${data.id}/${inst.file}?download=1`,
-                createdAt: Date.now(),
-              });
-            }
-            setBusy(false);
-            return;
-          }
-          if (s.status === "failed") throw new Error(s.error || "Separation failed.");
-          if (s.status === "finishing") {
-            setPhase(2);
-            setPct(92);
-          } else {
-            // ease toward 88% over ~3 minutes
-            const k = Math.min(1, (Date.now() - sepStart) / 180000);
-            setPct(18 + 70 * (1 - Math.pow(1 - k, 2)));
-          }
-          poll.current = window.setTimeout(check, 3000);
-        } catch (err) {
-          stopTimers();
-          setError((err as Error).message);
-          setBusy(false);
-          loadWallet();
-        }
-      };
-      poll.current = window.setTimeout(check, 2500);
+      // Remember the running job so a tab switch / refresh can resume it instead of losing it.
+      try {
+        localStorage.setItem(
+          ACTIVE_JOB_KEY,
+          JSON.stringify({ id: data.id, name: file.name, startedAt: t0 })
+        );
+      } catch {}
+      followJob(data.id, file.name, t0);
     } catch (err) {
       stopTimers();
       setError((err as Error).message);
@@ -224,6 +300,8 @@ export default function StemTool() {
   const reset = () => {
     setFiles(null);
     setFile(null);
+    setResumeName(null);
+    setNotice(null);
     setJobId(null);
     setPct(0);
     setPhase(0);
@@ -353,11 +431,21 @@ export default function StemTool() {
     );
   }
 
+  const shownName = file?.name ?? resumeName;
+  const shownSize = file ? fmtSize(file.size) : "";
+
   return (
     <div>
       {walletBar}
 
-      {!file ? (
+      {notice && (
+        <div className="notice">
+          <Check size={15} style={{ verticalAlign: "middle", marginRight: 6 }} />
+          {notice}
+        </div>
+      )}
+
+      {!shownName ? (
         <div
           className={`dropzone${drag ? " drag" : ""}`}
           onDragOver={(e) => {
@@ -381,15 +469,15 @@ export default function StemTool() {
           <div className="file-pill">
             <div className="ic"><Music size={20} /></div>
             <div style={{ minWidth: 0 }}>
-              <div className="nm">{file.name}</div>
-              <div className="sz">{fmtSize(file.size)}{busy && ` · ${fmtElapsed(elapsed)} elapsed`}</div>
+              <div className="nm">{shownName}</div>
+              <div className="sz">{shownSize}{busy && `${shownSize ? " · " : ""}${fmtElapsed(elapsed)} elapsed`}</div>
             </div>
             {!busy && (
-              <button className="x" onClick={() => setFile(null)} aria-label="Remove file"><Close size={16} /></button>
+              <button className="x" onClick={() => { setFile(null); setResumeName(null); }} aria-label="Remove file"><Close size={16} /></button>
             )}
           </div>
           <div className="result-actions" style={{ marginTop: 20 }}>
-            <button className="btn btn-primary" onClick={start} disabled={busy}>
+            <button className="btn btn-primary" onClick={start} disabled={busy || !file}>
               <Layers size={17} /> {busy ? "Separating…" : "Extract instrumental"}
             </button>
           </div>
@@ -399,7 +487,10 @@ export default function StemTool() {
       {busy && (
         <>
           <Progress phases={PHASES} active={phase} percent={pct} />
-          <p className="hint">Studio-grade separation takes about 1–3 minutes for a typical song. Keep this tab open.</p>
+          <p className="hint">
+            Studio-grade separation usually takes 1–3 minutes. You can switch tabs — your song keeps processing, and
+            if anything goes wrong your song credit is refunded automatically.
+          </p>
         </>
       )}
 

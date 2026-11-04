@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { consumeSongCredit, refundSongCredit } from "@/lib/billing";
+import { consumeSongCredit, markJobPending, refundSongCredit } from "@/lib/billing";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { startSeparation } from "@/lib/stems";
 
@@ -52,6 +52,8 @@ export async function POST(req: Request) {
 
   try {
     const meta = await startSeparation(file, userKey);
+    // Track the deducted credit against this job so it is refunded automatically if the job fails or gets stuck.
+    await markJobPending(userKey, meta.id);
     return NextResponse.json({
       id: meta.id,
       status: meta.status,

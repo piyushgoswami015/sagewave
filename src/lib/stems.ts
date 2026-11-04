@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { refundSongCredit } from "./billing";
+import { refundPendingJob, settleJob, STALE_JOB_MS } from "./billing";
 import { createJobDir, jobDir, readMeta, run, writeMeta } from "./jobs";
 import { demucsSemaphore } from "./ratelimit";
 
@@ -61,7 +61,7 @@ async function resolveDemucsBin(): Promise<string | null> {
 }
 
 async function download(url: string, dest: string) {
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(90_000) });
   if (!res.ok) throw new Error(`Could not download stem (${res.status})`);
   await fs.writeFile(dest, Buffer.from(await res.arrayBuffer()));
 }
@@ -92,6 +92,7 @@ async function separateWithHuggingFaceDemucs(
     const upRes = await fetch(`${HF_DEMUCS_SPACE}/gradio_api/upload`, {
       method: "POST",
       body: fd,
+      signal: AbortSignal.timeout(60_000),
     });
     if (!upRes.ok) throw new Error(`HF upload failed (${upRes.status})`);
     const upJson = (await upRes.json()) as string[];
@@ -105,13 +106,16 @@ async function separateWithHuggingFaceDemucs(
       body: JSON.stringify({
         data: [{ path: remotePath, meta: { _type: "gradio.FileData" } }],
       }),
+      signal: AbortSignal.timeout(30_000),
     });
     if (!callRes.ok) throw new Error(`HF inference call failed (${callRes.status})`);
     const { event_id: eventId } = (await callRes.json()) as { event_id?: string };
     if (!eventId) throw new Error("No event_id returned from Demucs Space.");
 
-    // 3) Read SSE result stream from Demucs AI
-    const sseRes = await fetch(`${HF_DEMUCS_SPACE}/gradio_api/call/inference/${eventId}`);
+    // 3) Read SSE result stream from Demucs AI (bounded so a stuck GPU queue can never hang the job or hold a queue slot)
+    const sseRes = await fetch(`${HF_DEMUCS_SPACE}/gradio_api/call/inference/${eventId}`, {
+      signal: AbortSignal.timeout(150_000),
+    });
     if (!sseRes.ok) throw new Error(`HF SSE stream failed (${sseRes.status})`);
     const sseText = await sseRes.text();
 
@@ -185,6 +189,7 @@ async function separateWithHuggingFaceDemucs(
         body: JSON.stringify({
           data: [{ name: path.basename(sourceFile), data: `data:audio/mpeg;base64,${b64}` }],
         }),
+        signal: AbortSignal.timeout(120_000),
       });
       if (!res4.ok) throw new Error(`4-stem HF space error ${res4.status}`);
       const json4 = (await res4.json()) as { data?: Array<{ name?: string; data?: string }> };
@@ -488,6 +493,12 @@ export async function startSeparation(file: File, owner?: string): Promise<StemM
       await writeMeta(dir, meta);
     } finally {
       if (release) release();
+      // Server-side settlement: refund immediately on failure, confirm on success,
+      // even if the user closed the tab and nobody is polling anymore.
+      if (owner) {
+        if (meta.status === "failed") await refundPendingJob(owner, id).catch(() => {});
+        else if (meta.status === "done") await settleJob(owner, id).catch(() => {});
+      }
     }
   })();
   return meta;
@@ -500,10 +511,19 @@ export async function pollSeparation(id: string, requester?: string): Promise<St
   if (meta.owner && requester && meta.owner !== requester) {
     throw new Error("Job not found or expired.");
   }
-  if (meta.status === "failed" && meta.owner && !meta.refunded) {
-    meta.refunded = true;
-    await refundSongCredit(meta.owner).catch(() => {});
+  if (meta.owner && meta.status === "failed") {
+    await refundPendingJob(meta.owner, id).catch(() => {});
+  }
+  if (meta.owner && meta.status === "done") {
+    await settleJob(meta.owner, id).catch(() => {});
+  }
+  // Stuck job safety net: never leave a user waiting (or charged) for a job that is not progressing.
+  if ((meta.status === "processing" || meta.status === "finishing") && Date.now() - meta.createdAt > STALE_JOB_MS) {
+    meta.status = "failed";
+    meta.error = "Separation took too long and was stopped. Your song credit has been refunded — please try again.";
     await writeMeta(dir, meta);
+    if (meta.owner) await refundPendingJob(meta.owner, id).catch(() => {});
+    return meta;
   }
   if (meta.status === "done" || meta.status === "failed" || meta.status === "finishing") return meta;
 
