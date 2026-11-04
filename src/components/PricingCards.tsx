@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Alert, Arrow, Check } from "./Icons";
-import { PRICING_PLANS, type PlanId } from "@/lib/billing";
+import { PRICING_PLANS, type PlanId } from "@/lib/plans";
 
 declare global {
   interface Window {
