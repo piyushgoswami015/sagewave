@@ -46,14 +46,30 @@ export default async function DashboardPage() {
   }
 
   const firstName = session.user.name?.split(" ")[0] || "Creator";
-  const wallet = session.user.email ? await getUserWallet(session.user.email) : null;
-  const expStr = wallet?.premiumExpiresAt
-    ? new Date(wallet.premiumExpiresAt).toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      })
-    : null;
+  let wallet = null;
+  try {
+    if (session.user.email) {
+      wallet = await getUserWallet(session.user.email);
+    }
+  } catch (err) {
+    console.error("[dashboard] Error loading wallet:", err);
+  }
+
+  let expStr: string | null = null;
+  try {
+    if (wallet?.premiumExpiresAt) {
+      const d = new Date(wallet.premiumExpiresAt);
+      if (!isNaN(d.getTime())) {
+        expStr = d.toLocaleDateString("en-IN", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        });
+      }
+    }
+  } catch {
+    expStr = null;
+  }
 
   return (
     <section className="section" style={{ paddingTop: 48 }}>

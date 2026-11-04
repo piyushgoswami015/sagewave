@@ -121,7 +121,12 @@ export async function validateDeliverableEmail(rawEmail: string): Promise<string
 }
 
 async function readUsers(): Promise<StoredUser[]> {
-  return kvGet<StoredUser[]>("users", []);
+  try {
+    const users = await kvGet<StoredUser[]>("users", []);
+    return Array.isArray(users) ? users : [];
+  } catch {
+    return [];
+  }
 }
 
 async function writeUsers(users: StoredUser[]): Promise<void> {

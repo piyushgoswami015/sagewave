@@ -42,7 +42,12 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function readWallets(): Promise<Record<string, UserWallet>> {
-  return kvGet<Record<string, UserWallet>>("wallets", {});
+  try {
+    const wallets = await kvGet<Record<string, UserWallet>>("wallets", {});
+    return wallets && typeof wallets === "object" && !Array.isArray(wallets) ? wallets : {};
+  } catch {
+    return {};
+  }
 }
 
 async function writeWallets(wallets: Record<string, UserWallet>): Promise<void> {
@@ -138,7 +143,8 @@ async function reconcilePendingJobs(wallet: UserWallet): Promise<boolean> {
       dir = null;
     }
     const meta = dir ? await readMeta<Record<string, unknown> & { status?: string }>(dir) : null;
-    const age = Date.now() - new Date(startedAt).getTime();
+    const startedMs = new Date(startedAt).getTime();
+    const age = isNaN(startedMs) ? STALE_JOB_MS + 1000 : Date.now() - startedMs;
 
     if (meta?.status === "done") {
       delete pending[jobId];
@@ -165,22 +171,28 @@ async function reconcilePendingJobs(wallet: UserWallet): Promise<boolean> {
  */
 export function getUserWallet(rawEmail: string): Promise<UserWallet> {
   return withLock(async () => {
-    const email = rawEmail.trim().toLowerCase();
-    const wallets = await readWallets();
-    if (!wallets[email]) {
-      wallets[email] = newWallet(email);
-      await writeWallets(wallets);
-      return wallets[email];
-    }
+    const email = (rawEmail || "").trim().toLowerCase();
+    if (!email) return newWallet("guest@sagewave.in");
+    try {
+      const wallets = await readWallets();
+      if (!wallets[email]) {
+        wallets[email] = newWallet(email);
+        await writeWallets(wallets).catch(() => {});
+        return wallets[email];
+      }
 
-    const wallet = wallets[email];
-    const a = await reconcilePendingJobs(wallet);
-    const b = enforceWalletLifecycle(wallet);
-    if (a || b) {
-      wallets[email] = wallet;
-      await writeWallets(wallets);
+      const wallet = wallets[email];
+      const a = await reconcilePendingJobs(wallet).catch(() => false);
+      const b = enforceWalletLifecycle(wallet);
+      if (a || b) {
+        wallets[email] = wallet;
+        await writeWallets(wallets).catch(() => {});
+      }
+      return wallet;
+    } catch (err) {
+      console.error("[billing] getUserWallet error:", err);
+      return newWallet(email);
     }
-    return wallet;
   });
 }
 
