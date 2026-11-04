@@ -69,5 +69,5 @@ export class Semaphore {
   }
 }
 
-export const reelSemaphore = new Semaphore(4, 25);
-export const demucsSemaphore = new Semaphore(1, 10);
+export const reelSemaphore = new Semaphore(3, 25);
+export const demucsSemaphore = new Semaphore(2, 25);

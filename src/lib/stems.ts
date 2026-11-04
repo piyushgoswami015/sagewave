@@ -149,12 +149,16 @@ async function separateWithHuggingFaceDemucs(
     const bassName = `${base}-bass.mp3`;
     const melodyName = `${base}-other.mp3`;
 
-    // Encode crisp 320 kbps MP3s from Demucs AI WAV outputs + isolate Bass and Melody/Percussion from the clean AI Instrumental!
+    // Encode crisp 320 kbps MP3s sequentially so peak FFmpeg RAM stays under ~40 MB on Render 512MB container
+    await run(ffmpeg, ["-y", "-i", rawInst, ...enc, path.join(dir, instName)]);
+    await run(ffmpeg, ["-y", "-i", rawVocals, ...enc, path.join(dir, vocName)]);
+    await run(ffmpeg, ["-y", "-i", rawInst, "-af", "lowpass=f=240:poles=2,volume=1.15", ...enc, path.join(dir, bassName)]);
+    await run(ffmpeg, ["-y", "-i", rawInst, "-af", "highpass=f=240:poles=2", ...enc, path.join(dir, melodyName)]);
+
+    // Delete large raw WAV files immediately to free container memory/disk
     await Promise.all([
-      run(ffmpeg, ["-y", "-i", rawInst, ...enc, path.join(dir, instName)]),
-      run(ffmpeg, ["-y", "-i", rawVocals, ...enc, path.join(dir, vocName)]),
-      run(ffmpeg, ["-y", "-i", rawInst, "-af", "lowpass=f=240:poles=2,volume=1.15", ...enc, path.join(dir, bassName)]),
-      run(ffmpeg, ["-y", "-i", rawInst, "-af", "highpass=f=240:poles=2", ...enc, path.join(dir, melodyName)]),
+      fs.unlink(rawVocals).catch(() => {}),
+      fs.unlink(rawInst).catch(() => {}),
     ]);
 
     const files: StemFile[] = [];
@@ -231,6 +235,7 @@ async function separateWithHuggingFaceDemucs(
         const name = `${base}-${k}.mp3`;
         await run(ffmpeg, ["-y", "-i", rawPaths[k], ...enc, path.join(dir, name)]);
         await push(k, name);
+        await fs.unlink(rawPaths[k]).catch(() => {});
       }
 
       meta.status = "done";
@@ -462,7 +467,7 @@ export async function startSeparation(file: File, owner?: string): Promise<StemM
     return meta;
   }
 
-  // 3) On Render Free Tier (512MB RAM): Run Meta's Demucs AI via Hugging Face Gradio API in background!
+  // 3) On Render Free Tier (512MB RAM): Queue and run Meta's Demucs AI via Hugging Face Gradio API in background!
   const meta: StemMeta = {
     id,
     predictionId: "hf-demucs",
@@ -472,7 +477,19 @@ export async function startSeparation(file: File, owner?: string): Promise<StemM
     createdAt: Date.now(),
   };
   await writeMeta(dir, meta);
-  void separateWithHuggingFaceDemucs(dir, sourceFile, meta);
+  void (async () => {
+    let release: (() => void) | null = null;
+    try {
+      release = await demucsSemaphore.acquire();
+      await separateWithHuggingFaceDemucs(dir, sourceFile, meta);
+    } catch (err) {
+      meta.status = "failed";
+      meta.error = (err as Error).message || "The studio server queue is currently full. Please try again in a minute.";
+      await writeMeta(dir, meta);
+    } finally {
+      if (release) release();
+    }
+  })();
   return meta;
 }
 
